@@ -1,0 +1,15 @@
+name: sddepy_env
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.10
+  - numpy>=1.17
+  - scipy
+  - numba
+  - tqdm
+  - rich
+  - matplotlib
+  - pip
+  - pip:
+    - juliacall
