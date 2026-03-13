@@ -11,10 +11,8 @@ import sys
 
 import numpy as np
 
-from julia_bootstrap import init_julia
+from sdde_model import init_julia, sn_batch, summary_statistics, summary_statistics_batch
 init_julia()  # julia engine: ON
-
-from sdde_model import sn_batch, summary_statistics, summary_statistics_batch
 
 # ##### Cluster or Local? #####
 run_on_cluster = 0  # 0 is local, 1 is cluster
