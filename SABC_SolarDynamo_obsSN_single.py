@@ -34,8 +34,8 @@ if run_on_cluster == 0:
     datadir = LOCAL_DATA_DIR
     outdir = LOCAL_OUT_DIR
 else:
-    datadir = Path("/cfs/earth/scratch/ulzg/julia/SABC/data")
-    outdir = Path("/cfs/earth/scratch/ulzg/julia/SABC/output")
+    datadir = Path("/cfs/earth/scratch/ulzg/julia/SABC/SDDEpy/data")
+    outdir = Path("/cfs/earth/scratch/ulzg/julia/SABC/SDDEpy/output")
 
 if not datadir.exists():
     raise FileNotFoundError(f"Data directory does not exist: {datadir}")
