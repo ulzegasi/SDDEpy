@@ -111,117 +111,114 @@ class Prior:
         return lp
 
 
-def main() -> None:
-    (
-        DifferentialEvolution,
-        SABCConfig,
-        load_sabc_result,
-        make_f_dist,
-        sabc,
-        save_sabc_result,
-        update_population,
-    ) = _import_sabc_package()
+(
+    DifferentialEvolution,
+    SABCConfig,
+    load_sabc_result,
+    make_f_dist,
+    sabc,
+    save_sabc_result,
+    update_population,
+) = _import_sabc_package()
 
-    # ---- Load observed SN dataset (yearly resolution) ----
-    data_path = datadir / "silso_SN_y_202601.csv"
-    if not data_path.exists():
-        raise FileNotFoundError(f"Could not find data file: {data_path}")
+# ---- Load observed SN dataset (yearly resolution) ----
+data_path = datadir / "silso_SN_y_202601.csv"
+if not data_path.exists():
+    raise FileNotFoundError(f"Could not find data file: {data_path}")
 
-    data = np.loadtxt(data_path, delimiter=",", dtype=float)
-    if data.ndim != 2 or data.shape[1] < 2:
-        raise ValueError("Expected a 2-column CSV with [year, sunspot_number].")
+data = np.loadtxt(data_path, delimiter=",", dtype=float)
+if data.ndim != 2 or data.shape[1] < 2:
+    raise ValueError("Expected a 2-column CSV with [year, sunspot_number].")
 
-    SNyrs_temp = data[:, 0]
-    SNdata_temp = data[:, 1]
+SNyrs_temp = data[:, 0]
+SNdata_temp = data[:, 1]
 
-    # Keep 1749.5 .. 2019.5 only.
-    SNyrs = SNyrs_temp[49:-6]
-    SNdata = SNdata_temp[49:-6]
-    Tobs_without_warmup = int(SNdata.size)
-
-    # Observed summary statistics.
-    ss_obs = np.asarray(summary_statistics(SNdata), dtype=np.float64).reshape(-1)
-    n_stats = int(ss_obs.size)
-
-    # Batch simulator for make_f_dist.
-    def simulator(theta: np.ndarray, y: np.ndarray, rng: np.random.Generator) -> None:
-        theta = np.asarray(theta, dtype=float)
-        seeds = rng.integers(0, np.iinfo(np.int32).max, size=theta.shape[0], dtype=np.int64)
-        y_sim = sn_batch(theta, Twarmup=200, Tobs=Tobs_without_warmup, seeds=seeds)
-        y[:, :] = np.asarray(y_sim, dtype=np.float64)
-
-    # Batch summary stats for make_f_dist.
-    def stats_fn(y: np.ndarray, ss_out: np.ndarray) -> None:
-        ss_out[:, :] = np.asarray(summary_statistics_batch(y), dtype=np.float64)
-
-    f_dist = make_f_dist(
-        n_samples=Tobs_without_warmup,
-        ss_obs=ss_obs,
-        simulator=simulator,
-        stats_fn=stats_fn,
-        seed=123,
-        distance="abs",
-        n_workers=1,
-        use_numba=False,
-    )
-
-    # Prior ranges (yearly resolution).
-    lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
-    upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
-    prior = Prior(lower=lower, upper=upper)
-
-    # SABC parameters (parity with Julia script).
-    n_particles = 1_000
-    n_simulation = 1_000_000
-
-    rng_alg = np.random.default_rng(18)
-    rng_prop = np.random.default_rng(22)
-
-    proposal = DifferentialEvolution(n_para=lower.size, rng=rng_prop)
-    config = SABCConfig(
-        f_dist=f_dist,
-        prior=prior,
-        n_particles=n_particles,
-        algorithm="single_eps",
-        proposal=proposal,
-        rng=rng_alg,
-        show_checkpoint=200,
-        show_progressbar=True,
-        parallel_batches=False,
-    )
-
-    if from_previous == 0:
-        fname = "obsSN_single_77_py"
-        out = sabc(config, n_simulation=n_simulation)
-    else:
-        fname = "obsSN_single_77_10kd"
-        fname_previous = "obsSN_single_77_10kc"
-
-        prev_path = outdir / f"SABCresult_{fname_previous}.pkl"
-        if not prev_path.exists():
-            raise FileNotFoundError(f"Previous result not found: {prev_path}")
-
-        out_prev = load_sabc_result(prev_path)
-
-        out = update_population(out_prev, n_simulation=n_simulation)
-
-    # Save outputs.
-    np.savetxt(outdir / f"post_population_{fname}.csv", out.population, delimiter=",")
-
-    eps_hist = np.asarray(out.state.epsilon_history, dtype=float)
-    rho_hist = np.asarray(out.state.rho_history, dtype=float)
-    u_hist = np.asarray(out.state.u_history, dtype=float)
-
-    np.savetxt(outdir / f"epsilon_history_{fname}.csv", eps_hist, delimiter=",")
-    np.savetxt(outdir / f"rho_history_{fname}.csv", rho_hist, delimiter=",")
-    np.savetxt(outdir / f"u_history_{fname}.csv", u_hist, delimiter=",")
-
-    save_sabc_result(out, outdir / f"SABCresult_{fname}.pkl")
-
-    print(f"Saved outputs to: {outdir}")
-    print(f"Observed years used: {SNyrs[0]} - {SNyrs[-1]} (n={Tobs_without_warmup})")
-    print(f"Number of observed summary stats: {n_stats}")
+# Keep 1749.5 .. 2019.5 only.
+SNyrs = SNyrs_temp[49:-6]
+SNdata = SNdata_temp[49:-6]
+Tobs_without_warmup = int(SNdata.size)
 
 
-if __name__ == "__main__":
-    main()
+def simulator(theta: np.ndarray, y: np.ndarray, rng: np.random.Generator) -> None:
+    """Simulate yearly sunspot traces for a batch of parameters."""
+    theta = np.asarray(theta, dtype=float)
+    seeds = rng.integers(0, np.iinfo(np.int32).max, size=theta.shape[0], dtype=np.int64)
+    y_sim = sn_batch(theta, Twarmup=200, Tobs=Tobs_without_warmup, seeds=seeds)
+    y[:, :] = np.asarray(y_sim, dtype=np.float64)
+
+
+def stats_fn(y: np.ndarray, ss_out: np.ndarray) -> None:
+    """Compute batch summary statistics in-place."""
+    ss_out[:, :] = np.asarray(summary_statistics_batch(y), dtype=np.float64)
+
+
+# Observed summary statistics.
+ss_obs = np.asarray(summary_statistics(SNdata), dtype=np.float64).reshape(-1)
+n_stats = int(ss_obs.size)
+
+f_dist = make_f_dist(
+    n_samples=Tobs_without_warmup,
+    ss_obs=ss_obs,
+    simulator=simulator,
+    stats_fn=stats_fn,
+    seed=123,
+    distance="abs",
+    n_workers=1,
+    use_numba=False,
+)
+
+# Prior ranges (yearly resolution).
+lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
+upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
+prior = Prior(lower=lower, upper=upper)
+
+# SABC parameters (parity with Julia script).
+n_particles = 1_000
+n_simulation = 1_000_000
+
+rng_alg = np.random.default_rng(18)
+rng_prop = np.random.default_rng(22)
+
+proposal = DifferentialEvolution(n_para=lower.size, rng=rng_prop)
+config = SABCConfig(
+    f_dist=f_dist,
+    prior=prior,
+    n_particles=n_particles,
+    algorithm="single_eps",
+    proposal=proposal,
+    rng=rng_alg,
+    show_checkpoint=200,
+    show_progressbar=True,
+    parallel_batches=False,
+)
+
+if from_previous == 0:
+    fname = "obsSN_single_77_py"
+    out = sabc(config, n_simulation=n_simulation)
+else:
+    fname = "obsSN_single_77_10kd"
+    fname_previous = "obsSN_single_77_10kc"
+
+    prev_path = outdir / f"SABCresult_{fname_previous}.pkl"
+    if not prev_path.exists():
+        raise FileNotFoundError(f"Previous result not found: {prev_path}")
+
+    out_prev = load_sabc_result(prev_path)
+    out = update_population(out_prev, n_simulation=n_simulation)
+
+# Save outputs.
+np.savetxt(outdir / f"post_population_{fname}.csv", out.population, delimiter=",")
+
+eps_hist = np.asarray(out.state.epsilon_history, dtype=float)
+rho_hist = np.asarray(out.state.rho_history, dtype=float)
+u_hist = np.asarray(out.state.u_history, dtype=float)
+
+np.savetxt(outdir / f"epsilon_history_{fname}.csv", eps_hist, delimiter=",")
+np.savetxt(outdir / f"rho_history_{fname}.csv", rho_hist, delimiter=",")
+np.savetxt(outdir / f"u_history_{fname}.csv", u_hist, delimiter=",")
+
+save_sabc_result(out, outdir / f"SABCresult_{fname}.pkl")
+
+print(f"Saved outputs to: {outdir}")
+print(f"Observed years used: {SNyrs[0]} - {SNyrs[-1]} (n={Tobs_without_warmup})")
+print(f"Number of observed summary stats: {n_stats}")
