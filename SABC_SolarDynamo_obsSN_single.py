@@ -187,7 +187,7 @@ config = SABCConfig(
     algorithm="single_eps",
     proposal=proposal,
     rng=rng_alg,
-    show_checkpoint=200,
+    show_checkpoint=50,
     show_progressbar=True,
     parallel_batches=False,
 )
