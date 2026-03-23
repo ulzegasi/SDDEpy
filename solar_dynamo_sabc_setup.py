@@ -1,4 +1,4 @@
-"""Import-safe helpers for the observed sunspot-number SABC problem."""
+"""Import-safe helpers for solar-dynamo SABC problems."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import io
 import numpy as np
 
 from sdde_model import init_julia, sn_batch, summary_statistics, summary_statistics_batch
+
+DatasetName = str
 
 
 def load_observed_sn(datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
@@ -25,6 +27,39 @@ def load_observed_sn(datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
     years = data[:, 0][49:-6]
     values = data[:, 1][49:-6]
     return years, values, int(values.size)
+
+
+def load_c14_sn(datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
+    """Load the C14-reconstructed yearly sunspot-number record."""
+    data_path = datadir / "SN_Usoskin.csv"
+    if not data_path.exists():
+        raise FileNotFoundError(f"Could not find data file: {data_path}")
+
+    data = np.loadtxt(
+        data_path,
+        delimiter=",",
+        dtype=float,
+        usecols=(0, 1),
+        skiprows=2,
+        encoding="utf-8-sig",
+    )
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+    if data.ndim != 2 or data.shape[1] < 2:
+        raise ValueError("Expected a 2-column CSV with [year, sunspot_number].")
+
+    years = data[:, 0]
+    values = data[:, 1]
+    return years, values, int(values.size)
+
+
+def load_dataset(dataset: DatasetName, datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
+    """Load one of the supported solar-dynamo datasets."""
+    if dataset == "obsSN":
+        return load_observed_sn(datadir)
+    if dataset == "C14":
+        return load_c14_sn(datadir)
+    raise ValueError(f"Unknown dataset '{dataset}'. Expected 'obsSN' or 'C14'.")
 
 
 def simulator_batch(
