@@ -75,8 +75,6 @@ Supported command-line arguments:
   Selects the dataset. Choices: `obsSN`, `C14`.
 - `--algorithm`
   Selects the epsilon-update strategy. Choices: `single_eps`, `multi_eps`.
-- `--run-on-cluster`
-  Selects local or cluster paths. Choices: `0` for local, `1` for cluster.
 - `--from-previous`
   Selects whether to start a fresh run or continue a saved one. Choices: `0` for
   a fresh run, `1` to continue a previous run.

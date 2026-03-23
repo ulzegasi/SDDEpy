@@ -26,9 +26,6 @@ from solar_dynamo_sabc_setup import (
 )
 
 
-# ##### Cluster or Local? #####
-RUN_ON_CLUSTER = 0  # 0 is local, 1 is cluster
-
 # ##### First or update run? #####
 FROM_PREVIOUS = 0  # set 0 for first run, 1 for updating previous run
 
@@ -55,7 +52,6 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=VALID_DATASETS, default=DATASET)
     parser.add_argument("--algorithm", choices=VALID_ALGORITHMS, default=ALGORITHM)
-    parser.add_argument("--run-on-cluster", type=int, choices=(0, 1), default=RUN_ON_CLUSTER)
     parser.add_argument("--from-previous", type=int, choices=(0, 1), default=FROM_PREVIOUS)
     parser.add_argument("--n-workers", type=int, default=N_WORKERS)
     parser.add_argument("--run-name", default=RUN_NAME)
@@ -149,14 +145,9 @@ class Prior:
         return lp
 
 
-def _resolve_paths(run_on_cluster: int) -> tuple[Path, Path]:
-    if run_on_cluster == 0:
-        datadir = LOCAL_DATA_DIR
-        outdir = LOCAL_OUT_DIR
-    else:
-        datadir = Path("/cfs/earth/scratch/ulzg/julia/SABC/SDDEpy/data")
-        outdir = Path("/cfs/earth/scratch/ulzg/julia/SABC/SDDEpy/output")
-
+def _resolve_paths() -> tuple[Path, Path]:
+    datadir = LOCAL_DATA_DIR
+    outdir = LOCAL_OUT_DIR
     if not datadir.exists():
         raise FileNotFoundError(f"Data directory does not exist: {datadir}")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -182,7 +173,7 @@ def main() -> None:
         update_population,
     ) = _import_sabc_package()
 
-    datadir, outdir = _resolve_paths(args.run_on_cluster)
+    datadir, outdir = _resolve_paths()
     SNyrs, SNdata, Tobs_without_warmup = load_dataset(args.dataset, datadir)
 
     # Problem-specific simulator/statistics functions live in an import-safe helper
