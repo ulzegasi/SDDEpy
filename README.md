@@ -13,7 +13,7 @@ conda activate sddepy_env
 Install the shared SDDE model package (-e -> editable means changes in that repo are immediately visible without reinstalling.):
 
 ```bash
-pip install -e /Users/ulzg/SABC/SDDE-model
+pip install -e /path/to/SDDE-model
 ```
 
 The shared `sdde_model` package now owns the Julia bootstrap and pinned Julia
@@ -34,7 +34,7 @@ NumPy-only examples, but it is not reliable for this repository's Julia-backed
 solar dynamo model: multiple Python threads would share the same `juliacall`
 bridge and could hang during initialization or simulation.
 
-To avoid that, [`SABC_SolarDynamo_obsSN_single.py`](/Users/ulzg/SABC/SDDEpy/SABC_SolarDynamo_obsSN_single.py)
+To avoid that, [`SABC_SolarDynamo.py`](/Users/ulzg/SABC/SDDEpy/SABC_SolarDynamo.py)
 now uses process-based parallelism for the Julia case. Separate processes do not
 share one Julia session; each worker starts its own Julia runtime, which is
 heavier but much safer than threads here.
