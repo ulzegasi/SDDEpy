@@ -97,3 +97,62 @@ python3 SABC_SolarDynamo.py \
   --previous-run-name obsSN_multi_eps \
   --run-name obsSN_multi_eps_continue
 ```
+
+## Benchmarking
+
+[`SABC_SolarDynamo_BENCHMARK.py`](/Users/ulzg/SABC/SDDEpy/SABC_SolarDynamo_BENCHMARK.py)
+is a benchmark-only driver for timing runs with fixed benchmark settings. By
+default it uses:
+
+- dataset `obsSN`
+- algorithm `single_eps`
+- `n_particles = 1000`
+- `n_simulation = 4_000_000`
+
+Unlike the main driver, it does not save posterior populations or histories. It
+only measures the SABC wall-clock time and appends one row to a benchmark CSV.
+
+Run one benchmark directly with:
+
+```bash
+python3 SABC_SolarDynamo_BENCHMARK.py --n-workers 8
+```
+
+This writes one row to:
+
+```bash
+output/benchmark_obsSN_single.csv
+```
+
+with the columns:
+
+- `run_id`
+- `dataset`
+- `algorithm`
+- `n_workers`
+- `n_particles`
+- `n_simulation`
+- `elapsed_time_seconds`
+
+For cluster benchmarking, two helper scripts are provided:
+
+- [`runjob_benchmark.sh`](/Users/ulzg/SABC/SDDEpy/runjob_benchmark.sh)
+  runs one benchmark job for a given worker count.
+- [`submit_benchmarks.sh`](/Users/ulzg/SABC/SDDEpy/submit_benchmarks.sh)
+  submits a sweep over the worker counts `1,2,4,6,8,10,12,16,20,24,28,32`.
+
+On the cluster, submit the default `obsSN` + `single_eps` benchmark sweep with:
+
+```bash
+bash submit_benchmarks.sh
+```
+
+or override dataset/algorithm at submission time with:
+
+```bash
+DATASET=C14 ALGORITHM=multi_eps bash submit_benchmarks.sh
+```
+
+All benchmark jobs append to the same benchmark CSV using a file lock, so the
+rows are written safely even when multiple worker-count jobs run
+simultaneously.
