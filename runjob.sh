@@ -21,7 +21,7 @@
 # ==============================
 DATASET="obsSN"          # "obsSN" or "C14"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
-N_WORKERS=8
+N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 RUN_NAME="${DATASET}_${ALGORITHM}_clustertest"
 
 # ==============================
@@ -41,8 +41,9 @@ mkdir -p /cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output
 echo "Job started at: $(date)"
 echo "Running on host: $(hostname)"
 echo "Working directory: $(pwd)"
-echo "Python used: $(command -v python3)"
-python3 --version
+PYTHON_BIN="$(command -v python3)"
+echo "Python used: $PYTHON_BIN"
+"$PYTHON_BIN" --version
 echo "Julia used: $(command -v julia)"
 julia -v
 echo "JULIA_NUM_THREADS=$JULIA_NUM_THREADS"
@@ -54,7 +55,7 @@ echo "RUN_NAME=$RUN_NAME"
 # ==============================
 # Run
 # ==============================
-srun python3 SABC_SolarDynamo.py \
+srun "$PYTHON_BIN" SABC_SolarDynamo.py \
   --dataset "$DATASET" \
   --algorithm "$ALGORITHM" \
   --n-workers "$N_WORKERS" \
