@@ -19,17 +19,22 @@
 # ==============================
 # Editable variables
 # ==============================
-DATASET="${DATASET:-obsSN}"          # "obsSN" or "C14"
-ALGORITHM="${ALGORITHM:-single_eps}" # "single_eps" or "multi_eps"
-N_WORKERS="${N_WORKERS:-4}"
-RUN_ID="${RUN_ID:-bench_w${N_WORKERS}}"
+DATASET="obsSN"          # "obsSN" or "C14"
+ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
+N_WORKERS="${SLURM_CPUS_PER_TASK:-4}"
 
 algorithm_label="single"
 if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-BENCHMARK_FILE="${BENCHMARK_FILE:-/cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output/benchmark_${DATASET}_${algorithm_label}.csv}"
+dataset_label="SN"
+if [[ "$DATASET" == "C14" ]]; then
+  dataset_label="C14"
+fi
+
+RUN_ID="${dataset_label}_${algorithm_label}_w${N_WORKERS}"
+BENCHMARK_FILE="/cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output/benchmark_${DATASET}_${algorithm_label}.csv"
 
 # ==============================
 # Environment setup
@@ -47,8 +52,9 @@ export RUN_ID
 echo "Job started at: $(date)"
 echo "Running on host: $(hostname)"
 echo "Working directory: $(pwd)"
-echo "Python used: $(command -v python3)"
-python3 --version
+PYTHON_BIN="$(command -v python3)"
+echo "Python used: $PYTHON_BIN"
+"$PYTHON_BIN" --version
 echo "Julia used: $(command -v julia)"
 julia -v
 echo "JULIA_NUM_THREADS=$JULIA_NUM_THREADS"
@@ -61,7 +67,7 @@ echo "BENCHMARK_FILE=$BENCHMARK_FILE"
 # ==============================
 # Run
 # ==============================
-srun python3 SABC_SolarDynamo_BENCHMARK.py \
+srun "$PYTHON_BIN" SABC_SolarDynamo_BENCHMARK.py \
   --dataset "$DATASET" \
   --algorithm "$ALGORITHM" \
   --n-workers "$N_WORKERS" \

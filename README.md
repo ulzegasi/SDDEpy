@@ -147,24 +147,27 @@ On the cluster, submit the default `obsSN` + `single_eps` benchmark sweep with:
 bash submit_benchmarks.sh
 ```
 
-You can override the submission defaults by prepending environment variables to
-the `bash submit_benchmarks.sh` command. For example:
+The worker sweep is controlled by
+[`submit_benchmarks.sh`](/Users/ulzg/SABC/SDDEpy/submit_benchmarks.sh). The
+dataset and algorithm are configured directly in
+[`runjob_benchmark.sh`](/Users/ulzg/SABC/SDDEpy/runjob_benchmark.sh), where the
+batch job also derives `N_WORKERS` from `SLURM_CPUS_PER_TASK` and writes the
+benchmark CSV for the selected dataset/algorithm pair.
 
-```bash
-DATASET=C14 ALGORITHM=multi_eps bash submit_benchmarks.sh
-```
-
-This works for all defaults defined in
-[`submit_benchmarks.sh`](/Users/ulzg/SABC/SDDEpy/submit_benchmarks.sh), for
+If you want to benchmark a different setup, edit the values near the top of
+[`runjob_benchmark.sh`](/Users/ulzg/SABC/SDDEpy/runjob_benchmark.sh), for
 example:
 
 ```bash
-DATASET=C14 \
-ALGORITHM=multi_eps \
-TIME_LIMIT=02-00:00:00 \
-PARTITION=earth-3 \
-MEMORY=256G \
-bash submit_benchmarks.sh
+DATASET="C14"
+ALGORITHM="multi_eps"
+```
+
+You can still override Slurm submission settings such as time, partition, and
+memory when launching the sweep:
+
+```bash
+TIME_LIMIT=02-00:00:00 PARTITION=earth-3 MEMORY=256G bash submit_benchmarks.sh
 ```
 
 All benchmark jobs append to the same benchmark CSV using a file lock, so the
