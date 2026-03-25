@@ -163,8 +163,11 @@ DATASET="C14"
 ALGORITHM="multi_eps"
 ```
 
-You can still override Slurm submission settings such as time, partition, and
-memory when launching the sweep:
+You can still override the Slurm submission settings from
+[`runjob_benchmark.sh`](/Users/ulzg/SABC/SDDEpy/runjob_benchmark.sh), such as
+time, partition, and memory, when launching the sweep. These values are passed
+to `sbatch` by [`submit_benchmarks.sh`](/Users/ulzg/SABC/SDDEpy/submit_benchmarks.sh)
+and therefore override the corresponding `#SBATCH` defaults:
 
 ```bash
 TIME_LIMIT=02-00:00:00 PARTITION=earth-3 MEMORY=256G bash submit_benchmarks.sh
