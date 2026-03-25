@@ -14,21 +14,23 @@ MEMORY="${MEMORY:-128G}"
 mkdir -p /cfs/earth/scratch/ulzg/SABCpy/txtout
 mkdir -p /cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output
 
-algorithm_label="single"
+algorithm_label_short="s"
+algorithm_label_long="single"
 if [[ "$ALGORITHM" == "multi_eps" ]]; then
-  algorithm_label="multi"
+  algorithm_label_short="m"
+  algorithm_label_long="multi"
 fi
 
-benchmark_file="/cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output/benchmark_${DATASET}_${algorithm_label}.csv"
+dataset_label="SN"
+if [[ "$DATASET" == "C14" ]]; then
+  dataset_label="C14"
+fi
 
-echo "Submitting benchmark jobs"
-echo "DATASET=$DATASET"
-echo "ALGORITHM=$ALGORITHM"
-echo "BENCHMARK_FILE=$benchmark_file"
+benchmark_file="/cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output/benchmark_${DATASET}_${algorithm_label_long}.csv"
 
 for workers in "${WORKER_COUNTS[@]}"; do
-  job_name="bench_${DATASET}_${algorithm_label}_w${workers}"
-  run_id="${DATASET}_${algorithm_label}_w${workers}"
+  job_name="b${dataset_label}${algorithm_label_short}w${workers}"
+  run_id="${dataset_label}_${algorithm_label_long}_w${workers}"
   echo "Submitting $job_name"
   sbatch \
     --job-name="$job_name" \

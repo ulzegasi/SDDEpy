@@ -147,10 +147,24 @@ On the cluster, submit the default `obsSN` + `single_eps` benchmark sweep with:
 bash submit_benchmarks.sh
 ```
 
-or override dataset/algorithm at submission time with:
+You can override the submission defaults by prepending environment variables to
+the `bash submit_benchmarks.sh` command. For example:
 
 ```bash
 DATASET=C14 ALGORITHM=multi_eps bash submit_benchmarks.sh
+```
+
+This works for all defaults defined in
+[`submit_benchmarks.sh`](/Users/ulzg/SABC/SDDEpy/submit_benchmarks.sh), for
+example:
+
+```bash
+DATASET=C14 \
+ALGORITHM=multi_eps \
+TIME_LIMIT=02-00:00:00 \
+PARTITION=earth-3 \
+MEMORY=256G \
+bash submit_benchmarks.sh
 ```
 
 All benchmark jobs append to the same benchmark CSV using a file lock, so the
