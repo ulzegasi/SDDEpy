@@ -218,7 +218,7 @@ def main() -> None:
 
     # SABC parameters (parity with Julia script).
     n_particles = 1_000
-    n_simulation = 1_000_000
+    n_simulation = 1_000_000_000
 
     rng_alg = np.random.default_rng(18)
     rng_prop = np.random.default_rng(22)
@@ -231,7 +231,7 @@ def main() -> None:
         algorithm=args.algorithm,
         proposal=proposal,
         rng=rng_alg,
-        show_checkpoint=50,
+        show_checkpoint=500,
         show_progressbar=True,
         parallel_batches=False,
     )

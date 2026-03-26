@@ -7,7 +7,7 @@
 #
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=32
 #SBATCH --time=04-00:00:00
 #SBATCH --partition=earth-3
 #SBATCH --no-requeue
@@ -22,7 +22,13 @@
 DATASET="obsSN"          # "obsSN" or "C14"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
-RUN_NAME="${DATASET}_${ALGORITHM}_clustertest"
+
+algorithm_label="single"
+if [[ "$ALGORITHM" == "multi_eps" ]]; then
+  algorithm_label="multi"
+fi
+
+RUN_NAME="${DATASET}_${algorithm_label}_77py"
 
 # ==============================
 # Environment setup
@@ -55,7 +61,7 @@ echo "RUN_NAME=$RUN_NAME"
 # ==============================
 # Run
 # ==============================
-srun "$PYTHON_BIN" SABC_SolarDynamo.py \
+srun --cpu-bind=cores "$PYTHON_BIN" SABC_SolarDynamo.py \
   --dataset "$DATASET" \
   --algorithm "$ALGORITHM" \
   --n-workers "$N_WORKERS" \

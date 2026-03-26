@@ -19,8 +19,13 @@
 # ==============================
 # Editable variables
 # ==============================
-DATASET="obsSN"          # "obsSN" or "C14"
-ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
+# -------------------------------------------------------
+# SELECT DATASET AND ALGORITHM BY SETTING THESE VARIABLES
+# SET 'X' (=1,2,3,4,...) IN BENCHMARK_FILE (below): benchmark_${DATASET}_${algorithm_label}_X.csv 
+# REMEMBER TO SET job_name IN SUBMIT_BENCHMARKS.SH
+# -------------------------------------------------------
+DATASET="C14"          # "obsSN" or "C14"
+ALGORITHM="multi_eps"   # "single_eps" or "multi_eps"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-4}"
 
 algorithm_label="single"
@@ -34,7 +39,7 @@ if [[ "$DATASET" == "C14" ]]; then
 fi
 
 RUN_ID="${dataset_label}_${algorithm_label}_w${N_WORKERS}"
-BENCHMARK_FILE="/cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output/benchmark_${DATASET}_${algorithm_label}.csv"
+BENCHMARK_FILE="/cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output/benchmark_${DATASET}_${algorithm_label}_8.csv"
 
 # ==============================
 # Environment setup
@@ -67,7 +72,7 @@ echo "BENCHMARK_FILE=$BENCHMARK_FILE"
 # ==============================
 # Run
 # ==============================
-srun "$PYTHON_BIN" SABC_SolarDynamo_BENCHMARK.py \
+srun --cpu-bind=cores "$PYTHON_BIN" SABC_SolarDynamo_BENCHMARK.py \
   --dataset "$DATASET" \
   --algorithm "$ALGORITHM" \
   --n-workers "$N_WORKERS" \

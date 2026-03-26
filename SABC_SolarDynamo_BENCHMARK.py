@@ -5,7 +5,7 @@ Default benchmark settings:
 - dataset: "obsSN"
 - algorithm: "single_eps"
 - n_particles: 1000
-- n_simulation: 4_000_000
+- n_simulation: 5_000_000
 - no posterior outputs are written
 
 Each completed run appends one row to a benchmark CSV so multiple Slurm jobs
@@ -45,7 +45,7 @@ VALID_DATASETS = ("obsSN", "C14")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
 VALID_WORKER_COUNTS = (1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 28, 32)
 N_PARTICLES = 1_000
-N_SIMULATION = 4_000_000
+N_SIMULATION = 5_000_000
 SHOW_CHECKPOINT = 500
 
 
