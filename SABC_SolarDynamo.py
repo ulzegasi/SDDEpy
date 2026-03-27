@@ -154,14 +154,6 @@ def _resolve_paths() -> tuple[Path, Path]:
     return datadir, outdir
 
 
-def _format_elapsed_dd_hh_mm(seconds: float) -> str:
-    total_seconds = max(0, int(seconds))
-    days, remainder = divmod(total_seconds, 24 * 60 * 60)
-    hours, remainder = divmod(remainder, 60 * 60)
-    minutes, _ = divmod(remainder, 60)
-    return f"{days:02d}:{hours:02d}:{minutes:02d}"
-
-
 def main() -> None:
     args = _parse_args()
     if args.n_workers < 1:
@@ -279,7 +271,7 @@ def main() -> None:
     print(f"Run name: {run_name}")
     if previous_run_name is not None:
         print(f"Previous run name: {previous_run_name}")
-    print(f"SABC wall-clock time (DD:HH:MM): {_format_elapsed_dd_hh_mm(sabc_wallclock)}")
+    print(f"SABC wall-clock time: {sabc_wallclock:.2f} s")
 
 
 if __name__ == "__main__":
