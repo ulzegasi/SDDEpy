@@ -147,6 +147,14 @@ def _append_benchmark_row(csv_path: Path, row: dict[str, object]) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _format_elapsed_dd_hh_mm(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    days, remainder = divmod(total_seconds, 24 * 60 * 60)
+    hours, remainder = divmod(remainder, 60 * 60)
+    minutes, _ = divmod(remainder, 60)
+    return f"{days:02d}:{hours:02d}:{minutes:02d}"
+
+
 def main() -> None:
     args = _parse_args()
     if args.n_workers < 1:
@@ -247,7 +255,7 @@ def main() -> None:
     print("---------------------------------------------------")
     print("Benchmark finished successfully")
     print(f"n_workers used: {args.n_workers} ({worker_backend})")
-    print(f"SABC wall-clock time: {sabc_wallclock:.2f} s")
+    print(f"SABC wall-clock time (DD:HH:MM): {_format_elapsed_dd_hh_mm(sabc_wallclock)}")
     print(f"Appended benchmark row to: {benchmark_path}")
     print("---------------------------------------------------")
 
