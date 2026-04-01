@@ -98,6 +98,72 @@ python3 SABC_SolarDynamo.py \
   --run-name obsSN_multi_eps_continue
 ```
 
+## Importance-Sampling Filtering
+
+[`importance_sampling_filter.py`](/Users/ulzg/SABC/SDDEpy/importance_sampling_filter.py)
+post-processes a saved final SABC population and keeps particles using two
+distance definitions:
+
+- reconstructed distances: for each posterior particle, resimulate the model
+  repeatedly and average the summary-statistic distances
+- SABC distances: use the final particle-wise `rho` matrix stored in the saved
+  SABC result
+
+For each run, the script computes the norm of the distance vector, builds a KDE
+for those norms, and chooses a cutoff targeting a retained mass of about `70%`
+by default. To keep the realized retained count close to the requested target,
+it tries several KDE bandwidths and uses the KDE-based cutoff that best matches
+the requested retained fraction.
+
+The script writes only two files per processed run to
+[`output/`](/Users/ulzg/SABC/SDDEpy/output):
+
+- `kept_ind_reconst_<run_name>.csv`
+- `kept_ind_sabc_<run_name>.csv`
+
+Examples:
+
+```bash
+python3 importance_sampling_filter.py --dataset obsSN --algorithm single --tag 77py
+python3 importance_sampling_filter.py --dataset obsSN --algorithm multi --tag 77py
+python3 importance_sampling_filter.py --dataset C14 --algorithm single --tag 77py
+python3 importance_sampling_filter.py --dataset C14 --algorithm multi --tag 77py
+```
+
+To display the overlaid histogram comparison interactively, add:
+
+```bash
+--show-plots
+```
+
+Supported command-line arguments:
+
+- `--dataset`
+  Dataset to process. Choices: `obsSN`, `C14`, `all`.
+- `--algorithm`
+  Algorithm family encoded in the saved run name. Choices: `single`, `multi`,
+  `all`.
+- `--tag`
+  Run suffix used in filenames such as
+  `post_population_obsSN_single_77py.csv`. Default: `77py`.
+- `--run-name`
+  Optional explicit run name. This can be passed multiple times; if used, the
+  script skips the automatic dataset/algorithm expansion.
+- `--n-repeats`
+  Number of repeated simulations per posterior particle for the reconstructed
+  distances. Default: `50`.
+- `--keep-mass`
+  Target retained mass for the KDE-based cutoff. Default: `0.70`.
+- `--n-workers`
+  Number of worker processes used for the reconstructed-distance step.
+  Default: `4`.
+- `--seed`
+  Base random seed used for the reconstructed-distance simulations.
+  Default: `123`.
+- `--show-plots`
+  Show one interactive figure per processed run with the reconstructed and SABC
+  distance histograms overlaid.
+
 ## Benchmarking
 
 [`SABC_SolarDynamo_BENCHMARK.py`](/Users/ulzg/SABC/SDDEpy/SABC_SolarDynamo_BENCHMARK.py)
