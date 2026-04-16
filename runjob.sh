@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SNs77py
+#SBATCH --job-name=SNs78py
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -28,7 +28,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_77py"
+RUN_NAME="${DATASET}_${algorithm_label}_78py"
 
 # ==============================
 # Environment setup
@@ -37,6 +37,9 @@ RUN_NAME="${DATASET}_${algorithm_label}_77py"
 # Let this script handle conda activation.
 
 . /cfs/earth/scratch/ulzg/SABCpy/load_sddepy_env.sh
+
+export JULIA_DEPOT_PATH=/cfs/earth/scratch/ulzg/.julia
+mkdir -p "$JULIA_DEPOT_PATH"
 
 mkdir -p "$TMPDIR"
 mkdir -p /cfs/earth/scratch/ulzg/SABCpy/SDDEpy/output
@@ -53,6 +56,7 @@ echo "Python used: $PYTHON_BIN"
 echo "Julia used: $(command -v julia)"
 julia -v
 echo "JULIA_NUM_THREADS=$JULIA_NUM_THREADS"
+echo "JULIA_DEPOT_PATH=$JULIA_DEPOT_PATH"
 echo "DATASET=$DATASET"
 echo "ALGORITHM=$ALGORITHM"
 echo "N_WORKERS=$N_WORKERS"

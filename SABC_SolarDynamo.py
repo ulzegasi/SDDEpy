@@ -201,7 +201,8 @@ def main() -> None:
             ss_obs=ss_obs,
             simulator=simulator,
             stats_fn=stats_fn,
-            seed=123,
+            # seed=123,
+            seed=None,
             distance="abs",
             n_workers=args.n_workers,
             worker_setup=init_julia_quiet,
@@ -213,23 +214,31 @@ def main() -> None:
             ss_obs=ss_obs,
             simulator=simulator,
             stats_fn=stats_fn,
-            seed=123,
+            # seed=123,
+            seed=None,
             distance="abs",
             n_workers=args.n_workers,
             use_numba=False,
         )
 
     # Prior ranges (yearly resolution).
-    lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
-    upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
+    # Ulzega et al., ApJ 992, 2025:
+    # lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
+    # upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
+    # Try something new:
+    lower = np.array([0.1, 0.1, 1.0, 0.005, 1.0], dtype=float)
+    upper = np.array([10.0, 10.0, 15.0, 0.05, 15.0], dtype=float)
     prior = Prior(lower=lower, upper=upper)
 
     # SABC parameters (parity with Julia script).
     n_particles = 1_000
     n_simulation = 1_000_000_000
 
-    rng_alg = np.random.default_rng(18)
-    rng_prop = np.random.default_rng(22)
+    # rng_alg = np.random.default_rng(18)
+    # rng_prop = np.random.default_rng(22)
+    
+    rng_alg = np.random.default_rng()
+    rng_prop = np.random.default_rng()
 
     proposal = DifferentialEvolution(n_para=lower.size, rng=rng_prop)
     config = SABCConfig(
@@ -239,7 +248,7 @@ def main() -> None:
         algorithm=args.algorithm,
         proposal=proposal,
         rng=rng_alg,
-        show_checkpoint=500,
+        show_checkpoint=1000,
         show_progressbar=True,
         parallel_batches=False,
     )
