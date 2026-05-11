@@ -57,8 +57,8 @@ from `246.95 s` with `n_workers = 1` to `85.09 s` with `n_workers = 4`
 
 [`SABC_SolarDynamo.py`](/Users/ulzg/SABC/SDDEpy/SABC_SolarDynamo.py) is the
 unified entry point for the solar-dynamo SABC runs. It supports both datasets
-(`obsSN` and `C14`) and both epsilon-update strategies (`single_eps` and
-`multi_eps`).
+(`obsSN`, `C14`, and user-provided synthetic CSV files) and both epsilon-update
+strategies (`single_eps` and `multi_eps`).
 
 Example runs:
 
@@ -67,12 +67,20 @@ python3 SABC_SolarDynamo.py --dataset obsSN --algorithm single_eps
 python3 SABC_SolarDynamo.py --dataset obsSN --algorithm multi_eps
 python3 SABC_SolarDynamo.py --dataset C14 --algorithm single_eps
 python3 SABC_SolarDynamo.py --dataset C14 --algorithm multi_eps
+python3 SABC_SolarDynamo.py \
+  --dataset synthetic \
+  --synthetic-data-file sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv \
+  --algorithm single_eps
 ```
 
 Supported command-line arguments:
 
 - `--dataset`
-  Selects the dataset. Choices: `obsSN`, `C14`.
+  Selects the dataset. Choices: `obsSN`, `C14`, `synthetic`.
+- `--synthetic-data-file`
+  CSV filename required when `--dataset synthetic`. The file is loaded from
+  `data/synthetic_data/` and should have a header row and two columns:
+  time/year and sunspot number.
 - `--algorithm`
   Selects the epsilon-update strategy. Choices: `single_eps`, `multi_eps`.
 - `--from-previous`

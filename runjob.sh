@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SNs78py
+#SBATCH --job-name=SYNs1py
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -19,7 +19,8 @@
 # ==============================
 # Editable variables
 # ==============================
-DATASET="obsSN"          # "obsSN" or "C14"
+DATASET="synthetic"          # "obsSN", "C14", or "synthetic"
+SYNTHETIC_DATA_FILE="sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 
@@ -28,7 +29,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_78py"
+RUN_NAME="${DATASET}_${algorithm_label}_1"
 
 # ==============================
 # Environment setup
@@ -58,6 +59,9 @@ julia -v
 echo "JULIA_NUM_THREADS=$JULIA_NUM_THREADS"
 echo "JULIA_DEPOT_PATH=$JULIA_DEPOT_PATH"
 echo "DATASET=$DATASET"
+if [[ "$DATASET" == "synthetic" ]]; then
+  echo "SYNTHETIC_DATA_FILE=$SYNTHETIC_DATA_FILE"
+fi
 echo "ALGORITHM=$ALGORITHM"
 echo "N_WORKERS=$N_WORKERS"
 echo "RUN_NAME=$RUN_NAME"
@@ -67,6 +71,7 @@ echo "RUN_NAME=$RUN_NAME"
 # ==============================
 srun --cpu-bind=cores "$PYTHON_BIN" SABC_SolarDynamo.py \
   --dataset "$DATASET" \
+  --synthetic-data-file "$SYNTHETIC_DATA_FILE" \
   --algorithm "$ALGORITHM" \
   --n-workers "$N_WORKERS" \
   --run-name "$RUN_NAME"

@@ -2,7 +2,7 @@
 Unified SABC inference driver for the solar dynamo model.
 
 Supports:
-- datasets: "obsSN" or "C14"
+- datasets: "obsSN", "C14", or "synthetic"
 - algorithms: "single_eps" or "multi_eps"
 """
 
@@ -34,7 +34,7 @@ FROM_PREVIOUS = 0  # set 0 for first run, 1 for updating previous run
 N_WORKERS = 4
 
 # ##### Problem selection #####
-DATASET = "obsSN"  # "obsSN" or "C14"
+DATASET = "obsSN"  # "obsSN", "C14", or "synthetic"
 ALGORITHM = "single_eps"  # "single_eps" or "multi_eps"
 
 # ##### Output naming #####
@@ -44,19 +44,34 @@ PREVIOUS_RUN_NAME = None
 PROJECT_DIR = Path(__file__).resolve().parent
 LOCAL_DATA_DIR = PROJECT_DIR / "data"
 LOCAL_OUT_DIR = PROJECT_DIR / "output"
-VALID_DATASETS = ("obsSN", "C14")
+SYNTHETIC_DATA_DIR = LOCAL_DATA_DIR / "synthetic_data"
+VALID_DATASETS = ("obsSN", "C14", "synthetic")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=VALID_DATASETS, default=DATASET)
+    parser.add_argument(
+        "--synthetic-data-file",
+        default=None,
+        help=(
+            "CSV filename under data/synthetic_data used when --dataset synthetic. "
+            "Expected columns are [time, sunspot_number], with one header row."
+        ),
+    )
     parser.add_argument("--algorithm", choices=VALID_ALGORITHMS, default=ALGORITHM)
     parser.add_argument("--from-previous", type=int, choices=(0, 1), default=FROM_PREVIOUS)
     parser.add_argument("--n-workers", type=int, default=N_WORKERS)
     parser.add_argument("--run-name", default=RUN_NAME)
     parser.add_argument("--previous-run-name", default=PREVIOUS_RUN_NAME)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.dataset == "synthetic":
+        if args.synthetic_data_file is None:
+            parser.error("Missing data file, specify --synthetic-data-file")
+        if Path(args.synthetic_data_file).name != args.synthetic_data_file:
+            parser.error("--synthetic-data-file must be a file name, not a path")
+    return args
 
 
 def _default_run_name(dataset: str, algorithm: str) -> str:
@@ -154,6 +169,12 @@ def _resolve_paths() -> tuple[Path, Path]:
     return datadir, outdir
 
 
+def _resolve_synthetic_data_path(filename: str | None) -> Path | None:
+    if filename is None:
+        return None
+    return SYNTHETIC_DATA_DIR / filename
+
+
 def _format_elapsed_dd_hh_mm(seconds: float) -> str:
     total_seconds = max(0, int(seconds))
     days, remainder = divmod(total_seconds, 24 * 60 * 60)
@@ -182,7 +203,12 @@ def main() -> None:
     ) = _import_sabc_package()
 
     datadir, outdir = _resolve_paths()
-    SNyrs, SNdata, Tobs_without_warmup = load_dataset(args.dataset, datadir)
+    synthetic_data_path = _resolve_synthetic_data_path(args.synthetic_data_file)
+    SNyrs, SNdata, Tobs_without_warmup = load_dataset(
+        args.dataset,
+        datadir,
+        synthetic_data_path=synthetic_data_path,
+    )
 
     # Problem-specific simulator/statistics functions live in an import-safe helper
     # module so they can be used safely from multiprocessing "spawn" workers.
@@ -226,8 +252,9 @@ def main() -> None:
     # lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
     # upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
     # Try something new:
-    lower = np.array([0.1, 0.1, 1.0, 0.005, 1.0], dtype=float)
+    lower = np.array([4.0, 4.0, 9.5, 0.005, 4.0], dtype=float)
     upper = np.array([10.0, 10.0, 15.0, 0.05, 15.0], dtype=float)
+
     prior = Prior(lower=lower, upper=upper)
 
     # SABC parameters (parity with Julia script).
@@ -281,6 +308,8 @@ def main() -> None:
 
     print(f"Saved outputs to: {outdir}")
     print(f"Dataset used: {args.dataset}")
+    if args.dataset == "synthetic":
+        print(f"Synthetic data path: {synthetic_data_path}")
     print(f"Algorithm used: {args.algorithm}")
     print(f"Observed years used: {SNyrs[0]} - {SNyrs[-1]} (n={Tobs_without_warmup})")
     print(f"Number of observed summary stats: {n_stats}")

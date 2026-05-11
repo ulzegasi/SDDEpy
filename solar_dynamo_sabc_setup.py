@@ -53,13 +53,44 @@ def load_c14_sn(datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
     return years, values, int(values.size)
 
 
-def load_dataset(dataset: DatasetName, datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
+def load_synthetic_sn(data_path: Path) -> tuple[np.ndarray, np.ndarray, int]:
+    """Load a user-provided synthetic yearly sunspot-number record."""
+    if not data_path.exists():
+        raise FileNotFoundError(f"Could not find synthetic data file: {data_path}")
+
+    data = np.loadtxt(
+        data_path,
+        delimiter=",",
+        dtype=float,
+        usecols=(0, 1),
+        skiprows=1,
+        encoding="utf-8-sig",
+    )
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+    if data.ndim != 2 or data.shape[1] < 2:
+        raise ValueError("Expected a 2-column CSV with [time, sunspot_number].")
+
+    years = data[:, 0]
+    values = data[:, 1]
+    return years, values, int(values.size)
+
+
+def load_dataset(
+    dataset: DatasetName,
+    datadir: Path,
+    synthetic_data_path: Path | None = None,
+) -> tuple[np.ndarray, np.ndarray, int]:
     """Load one of the supported solar-dynamo datasets."""
     if dataset == "obsSN":
         return load_observed_sn(datadir)
     if dataset == "C14":
         return load_c14_sn(datadir)
-    raise ValueError(f"Unknown dataset '{dataset}'. Expected 'obsSN' or 'C14'.")
+    if dataset == "synthetic":
+        if synthetic_data_path is None:
+            raise ValueError("Missing data file, specify --synthetic-data-file")
+        return load_synthetic_sn(synthetic_data_path)
+    raise ValueError(f"Unknown dataset '{dataset}'. Expected 'obsSN', 'C14', or 'synthetic'.")
 
 
 def simulator_batch(
