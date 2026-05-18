@@ -1,0 +1,18 @@
+name: sddepy_enca_env
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # TensorFlow wheels are not available for every new Python release.
+  # Keep this pinned unless TensorFlow support is verified first.
+  - python=3.11
+  - numpy
+  - scipy
+  - numba
+  - tqdm
+  - rich
+  - matplotlib
+  - pip
+  - pip:
+    - juliacall==0.9.31
+    - tensorflow

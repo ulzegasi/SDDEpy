@@ -16,6 +16,7 @@ import time
 
 import numpy as np
 
+from enca_summary_stats import build_enca_summary_stats
 from process_fdist import make_process_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
@@ -48,6 +49,7 @@ LOCAL_OUT_DIR = PROJECT_DIR / "output"
 SYNTHETIC_DATA_DIR = LOCAL_DATA_DIR / "synthetic_data"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
+VALID_SUMMARY_STATS = ("fft", "enca")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -67,6 +69,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--run-name", default=RUN_NAME)
     parser.add_argument("--previous-run-name", default=PREVIOUS_RUN_NAME)
     parser.add_argument(
+        "--summary-stats",
+        choices=VALID_SUMMARY_STATS,
+        default="fft",
+        help="Summary-statistics backend. 'fft' keeps the current Fourier summaries; 'enca' uses an ENCA encoder.",
+    )
+    parser.add_argument(
         "--fourier-range",
         default=None,
         help=(
@@ -75,12 +83,27 @@ def _parse_args() -> argparse.Namespace:
             "e.g. '[1,2,5,9,12,28]'. Defaults to sdde_model's 1:6:120."
         ),
     )
+    parser.add_argument(
+        "--enca-run-dir",
+        default=None,
+        help="ENCA training run directory containing hyper_parameters.json and checkpoints.",
+    )
+    parser.add_argument(
+        "--enca-checkpoint-basename",
+        default="model_best_ckpt",
+        help="Checkpoint basename to load for --summary-stats enca. Defaults to model_best_ckpt.",
+    )
     args = parser.parse_args()
     if args.dataset == "synthetic":
         if args.synthetic_data_file is None:
             parser.error("Missing data file, specify --synthetic-data-file")
         if Path(args.synthetic_data_file).name != args.synthetic_data_file:
             parser.error("--synthetic-data-file must be a file name, not a path")
+    if args.summary_stats == "enca":
+        if args.enca_run_dir is None:
+            parser.error("--summary-stats enca requires --enca-run-dir")
+        if args.fourier_range is not None:
+            parser.error("--fourier-range can only be used with --summary-stats fft")
     return args
 
 
@@ -127,12 +150,13 @@ def _parse_fourier_range(value: str | None) -> tuple[int, ...] | None:
     return fourier_range
 
 
-def _default_run_name(dataset: str, algorithm: str) -> str:
-    return f"{dataset}_{algorithm}"
+def _default_run_name(dataset: str, algorithm: str, summary_stats: str) -> str:
+    suffix = "" if summary_stats == "fft" else f"_{summary_stats}"
+    return f"{dataset}_{algorithm}{suffix}"
 
 
 def _resolve_run_names(args: argparse.Namespace) -> tuple[str, str | None]:
-    run_name = args.run_name or _default_run_name(args.dataset, args.algorithm)
+    run_name = args.run_name or _default_run_name(args.dataset, args.algorithm, args.summary_stats)
     previous_run_name = args.previous_run_name
     if args.from_previous == 1 and not previous_run_name:
         raise ValueError(
@@ -262,15 +286,31 @@ def main() -> None:
         datadir,
         synthetic_data_path=synthetic_data_path,
     )
-    fourier_range = _parse_fourier_range(args.fourier_range)
 
     # Problem-specific simulator/statistics functions live in an import-safe helper
     # module so they can be used safely from multiprocessing "spawn" workers.
     simulator = build_simulator(Twarmup=200, Tobs=Tobs_without_warmup)
-    stats_fn = build_stats_fn(fourier_range=fourier_range)
 
-    # Observed summary statistics.
-    ss_obs = observed_summary_statistics(SNdata, fourier_range=fourier_range)
+    if args.summary_stats == "fft":
+        fourier_range = _parse_fourier_range(args.fourier_range)
+        stats_fn = build_stats_fn(fourier_range=fourier_range)
+        ss_obs = observed_summary_statistics(SNdata, fourier_range=fourier_range)
+        summary_stats_label = "fft"
+        summary_stats_detail = fourier_range if fourier_range is not None else "default 1:6:120"
+    elif args.summary_stats == "enca":
+        enca_stats = build_enca_summary_stats(
+            run_dir=args.enca_run_dir,
+            checkpoint_basename=args.enca_checkpoint_basename,
+            expected_tobs=Tobs_without_warmup,
+        )
+        fourier_range = None
+        stats_fn = enca_stats.batch
+        ss_obs = enca_stats.observed(SNdata)
+        summary_stats_label = "enca"
+        summary_stats_detail = f"{args.enca_run_dir} ({args.enca_checkpoint_basename})"
+    else:
+        raise ValueError(f"Unknown summary-statistics backend: {args.summary_stats}")
+
     n_stats = int(ss_obs.size)
 
     worker_backend = "process" if args.n_workers > 1 else "thread"
@@ -365,7 +405,8 @@ def main() -> None:
     if args.dataset == "synthetic":
         print(f"Synthetic data path: {synthetic_data_path}")
     print(f"Algorithm used: {args.algorithm}")
-    print(f"Fourier range used: {fourier_range if fourier_range is not None else 'default 1:6:120'}")
+    print(f"Summary stats backend: {summary_stats_label}")
+    print(f"Summary stats detail: {summary_stats_detail}")
     print(f"Observed years used: {SNyrs[0]} - {SNyrs[-1]} (n={Tobs_without_warmup})")
     print(f"Number of observed summary stats: {n_stats}")
     print(f"n_workers used: {args.n_workers} ({worker_backend})")

@@ -4,10 +4,19 @@ This repository contains the scripts and data needed to run SABC inference using
 
 ## Environment setup
 
-Activate the project environment:
+For standard FFT summary-statistics runs, activate the lightweight project
+environment:
 
 ```bash
 conda activate sddepy_env
+```
+
+For ENCA encoder summary-statistics runs, use the TensorFlow-capable environment
+defined in [`environment-enca.yml`](/Users/ulzg/SABC/SDDEpy/environment-enca.yml):
+
+```bash
+conda env create -f environment-enca.yml
+conda activate sddepy_enca_env
 ```
 
 Install the shared SDDE model package (-e -> editable means changes in that repo are immediately visible without reinstalling.):
@@ -15,6 +24,17 @@ Install the shared SDDE model package (-e -> editable means changes in that repo
 ```bash
 pip install -e /path/to/SDDE-model
 ```
+
+Also install the SABC package in the same environment if it is not already
+available:
+
+```bash
+pip install -e /path/to/SimulatedAnnealingABC
+```
+
+The ENCA environment pins Python to `3.11` and `juliacall` to `0.9.31`, because
+TensorFlow and the Julia bridge are sensitive to very new Python/Juliacall
+releases. Standard FFT runs do not need TensorFlow.
 
 The shared `sdde_model` package now owns the Julia bootstrap and pinned Julia
 environment. In scripts in this repo, initialize Julia with:
@@ -94,10 +114,19 @@ Supported command-line arguments:
   `<dataset>_<algorithm>`.
 - `--previous-run-name`
   Name of the saved run to continue from when `--from-previous 1` is used.
+- `--summary-stats`
+  Selects the summary-statistics backend. Choices: `fft`, `enca`. Default:
+  `fft`.
 - `--fourier-range`
-  Optional custom Fourier indices for the summary statistics. If omitted, the
-  run uses the default definition from the shared `sdde_model` package:
-  `1:6:120`, which gives 20 summary statistics.
+  Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
+  uses the default definition from the shared `sdde_model` package: `1:6:120`,
+  which gives 20 summary statistics.
+- `--enca-run-dir`
+  ENCA training-run directory used when `--summary-stats enca`. It must contain
+  `hyper_parameters.json` and TensorFlow checkpoint files.
+- `--enca-checkpoint-basename`
+  Checkpoint family to load when `--summary-stats enca`. Default:
+  `model_best_ckpt`.
 
 ### Custom Fourier Summary Statistics
 
@@ -141,6 +170,97 @@ python3 SABC_SolarDynamo.py \
 
 The current default FFT summary-statistics function remains unchanged and is
 used whenever `--fourier-range` is not provided.
+
+### ENCA Encoder Summary Statistics
+
+The driver can also use a trained ENCA encoder as the summary-statistics
+generator. In this mode, each simulated or observed time series is reshaped from
+`(Tobs,)` to `(Tobs, 1)` and passed through the encoder. The encoder output
+becomes the SABC summary-statistics vector.
+
+Use ENCA summaries by setting:
+
+```bash
+--summary-stats enca
+--enca-run-dir /path/to/enca/run
+```
+
+The ENCA run directory must contain:
+
+```text
+hyper_parameters.json
+model_best_ckpt-*.index
+model_best_ckpt-*.data-00000-of-00001
+```
+
+or another checkpoint family selected with `--enca-checkpoint-basename`.
+
+For example, an ENCA run trained with:
+
+```json
+{
+  "len_timeseries": 271,
+  "ndims_latent": 10
+}
+```
+
+will produce 10 summary statistics for each time series. These can be interpreted
+as the ENCA latent variables, for example 5 parameter-regression coordinates plus
+5 additional latent coordinates, depending on how the ENCA model was trained.
+
+Example, using a placeholder ENCA run path:
+
+```bash
+python3 SABC_SolarDynamo.py \
+  --dataset synthetic \
+  --synthetic-data-file sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv \
+  --algorithm multi_eps \
+  --summary-stats enca \
+  --enca-run-dir /path/to/sdde_ENCA_runs/20260504_enca_z10_3
+```
+
+To use a specific checkpoint family instead of the default `model_best_ckpt`,
+pass:
+
+```bash
+--enca-checkpoint-basename model_ckpt
+```
+
+The loader selects the highest-numbered matching checkpoint file, for example
+`model_best_ckpt-675000` among all `model_best_ckpt-*.index` files.
+
+The ENCA run path is machine-specific. Use the absolute path that exists on the
+machine where the inference is running. For example, on one local workstation it
+may look like:
+
+```bash
+--enca-run-dir /Users/ulzg/switchdrive/ZHAW_BISTOM/RENKU/enca-inca/sdde_ENCA_runs/20260504_enca_z10_3
+```
+
+The ENCA backend checks that the selected dataset length matches the encoder's
+`len_timeseries`. It will fail early if, for example, an encoder trained for
+`len_timeseries = 271` is used with a dataset of a different length.
+
+TensorFlow is required only for `--summary-stats enca`. Standard FFT runs do not
+import TensorFlow.
+
+For Slurm or other batch-system runs, [`runjob.sh`](/Users/ulzg/SABC/SDDEpy/runjob.sh)
+exposes the same choice in the editable variables section. Set
+`ENCA_RUN_DIR` to the absolute ENCA run directory on the compute system you are
+using:
+
+```bash
+SUMMARY_STATS="enca"     # "fft" or "enca"
+FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
+ENCA_RUN_DIR="/path/on/your/cluster/sdde_ENCA_runs/20260504_enca_z10_3"
+ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
+```
+
+On a different cluster or filesystem, only the path values and environment
+activation commands should need to change; the Python options are the same.
+
+When `SUMMARY_STATS="enca"`, `FOURIER_RANGE` is ignored and not passed to the
+Python driver.
 
 Example of continuing a previous run:
 
