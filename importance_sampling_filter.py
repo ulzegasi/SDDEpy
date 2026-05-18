@@ -35,9 +35,12 @@ from solar_dynamo_sabc_setup import (
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_DIR / "data"
+SYNTHETIC_DATA_DIR = DATA_DIR / "synthetic_data"
 OUTPUT_DIR = PROJECT_DIR / "output"
 
-VALID_DATASETS = ("obsSN", "C14")
+DEFAULT_SYNTHETIC_DATA_FILE = "sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
+VALID_DATASETS = ("obsSN", "C14", "synthetic")
+DEFAULT_DATASETS = ("obsSN", "C14")
 VALID_ALGORITHMS = ("single", "multi")
 
 
@@ -87,7 +90,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tag",
         default="77py",
-        help="Run suffix used in filenames like post_population_obsSN_single_77py.csv.",
+        help=(
+            "Run suffix used in filenames like post_population_obsSN_single_77py.csv. "
+            "Ignored when --run-name is supplied."
+        ),
+    )
+    parser.add_argument(
+        "--synthetic-data-file",
+        default=DEFAULT_SYNTHETIC_DATA_FILE,
+        help=(
+            "Synthetic CSV path, or filename under data/synthetic_data, used for "
+            "synthetic runs."
+        ),
     )
     parser.add_argument(
         "--run-name",
@@ -147,7 +161,7 @@ def _expand_run_names(args: argparse.Namespace) -> list[str]:
     if args.run_name:
         return list(dict.fromkeys(args.run_name))
 
-    datasets = VALID_DATASETS if args.dataset == "all" else (args.dataset,)
+    datasets = DEFAULT_DATASETS if args.dataset == "all" else (args.dataset,)
     algorithms = VALID_ALGORITHMS if args.algorithm == "all" else (args.algorithm,)
     return [f"{dataset}_{algorithm}_{args.tag}" for dataset in datasets for algorithm in algorithms]
 
@@ -157,6 +171,16 @@ def _dataset_from_run_name(run_name: str) -> str:
         if run_name.startswith(f"{dataset}_"):
             return dataset
     raise ValueError(f"Could not infer dataset from run name '{run_name}'.")
+
+
+def _resolve_synthetic_data_path(filename_or_path: str | None) -> Path | None:
+    if filename_or_path is None:
+        return None
+
+    path = Path(filename_or_path).expanduser()
+    if path.is_absolute() or path.parent != Path("."):
+        return path
+    return SYNTHETIC_DATA_DIR / path
 
 
 def _load_population(run_name: str) -> np.ndarray:
@@ -200,8 +224,13 @@ def _recover_sabc_rho(run_name: str, n_particles: int) -> np.ndarray:
     raise FileNotFoundError(f"Final SABC result not found: {pkl_path}")
 
 
-def _build_reconstruction_f_dist(dataset: str, n_workers: int, seed: int):
-    _, obs_data, t_obs = load_dataset(dataset, DATA_DIR)
+def _build_reconstruction_f_dist(
+    dataset: str,
+    n_workers: int,
+    seed: int,
+    synthetic_data_path: Path | None,
+):
+    _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
     ss_obs = observed_summary_statistics(obs_data)
     simulator = build_simulator(Twarmup=200, Tobs=t_obs)
 
@@ -223,6 +252,7 @@ def _reconstruct_rho(
     *,
     run_name: str,
     dataset: str,
+    synthetic_data_path: Path | None,
     n_repeats: int,
     n_workers: int,
     seed: int,
@@ -230,7 +260,12 @@ def _reconstruct_rho(
     if n_repeats < 1:
         raise ValueError("--n-repeats must be >= 1.")
 
-    f_dist = _build_reconstruction_f_dist(dataset, n_workers=n_workers, seed=seed)
+    f_dist = _build_reconstruction_f_dist(
+        dataset,
+        n_workers=n_workers,
+        seed=seed,
+        synthetic_data_path=synthetic_data_path,
+    )
     n_stats = int(f_dist.ss_obs.size)
     rho_sum = np.zeros((population.shape[0], n_stats), dtype=float)
 
@@ -394,6 +429,12 @@ def _show_overlay_plot(run_name: str, reconstructed: np.ndarray, sabc: np.ndarra
 
 def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
     dataset = _dataset_from_run_name(run_name)
+    synthetic_data_path = None
+    if dataset == "synthetic":
+        synthetic_data_path = _resolve_synthetic_data_path(args.synthetic_data_file)
+        if synthetic_data_path is None:
+            raise ValueError("Synthetic runs require --synthetic-data-file.")
+
     population = _load_population(run_name)
     n_particles = population.shape[0]
 
@@ -401,6 +442,7 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
         population,
         run_name=run_name,
         dataset=dataset,
+        synthetic_data_path=synthetic_data_path,
         n_repeats=args.n_repeats,
         n_workers=args.n_workers,
         seed=args.seed,
