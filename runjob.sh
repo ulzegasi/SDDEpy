@@ -23,6 +23,7 @@ DATASET="synthetic"          # "obsSN", "C14", or "synthetic"
 SYNTHETIC_DATA_FILE="sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
+FOURIER_RANGE="1:6:60"   # default in code is 1:6:120; set empty string to use default
 
 algorithm_label="single"
 if [[ "$ALGORITHM" == "multi_eps" ]]; then
@@ -65,13 +66,22 @@ fi
 echo "ALGORITHM=$ALGORITHM"
 echo "N_WORKERS=$N_WORKERS"
 echo "RUN_NAME=$RUN_NAME"
+echo "FOURIER_RANGE=${FOURIER_RANGE:-default 1:6:120}"
 
 # ==============================
 # Run
 # ==============================
-srun --cpu-bind=cores "$PYTHON_BIN" SABC_SolarDynamo.py \
-  --dataset "$DATASET" \
-  --synthetic-data-file "$SYNTHETIC_DATA_FILE" \
-  --algorithm "$ALGORITHM" \
-  --n-workers "$N_WORKERS" \
+cmd=(
+  srun --cpu-bind=cores "$PYTHON_BIN" SABC_SolarDynamo.py
+  --dataset "$DATASET"
+  --synthetic-data-file "$SYNTHETIC_DATA_FILE"
+  --algorithm "$ALGORITHM"
+  --n-workers "$N_WORKERS"
   --run-name "$RUN_NAME"
+)
+
+if [[ -n "$FOURIER_RANGE" ]]; then
+  cmd+=(--fourier-range "$FOURIER_RANGE")
+fi
+
+"${cmd[@]}"
