@@ -9,7 +9,7 @@ import io
 
 import numpy as np
 
-from sdde_model import init_julia, sn_batch, summary_statistics, summary_statistics_batch
+from sdde_model import hann_window, init_julia, sn_batch, summary_statistics, summary_statistics_batch
 
 DatasetName = str
 
@@ -118,9 +118,39 @@ def stats_fn_batch(y: np.ndarray, ss_out: np.ndarray) -> None:
     ss_out[:, :] = np.asarray(summary_statistics_batch(y), dtype=np.float64)
 
 
-def observed_summary_statistics(sn_data: np.ndarray) -> np.ndarray:
+def stats_fn_batch_fourier(
+    y: np.ndarray,
+    ss_out: np.ndarray,
+    *,
+    fourier_range: tuple[int, ...],
+) -> None:
+    """Compute batch Fourier summary statistics for a custom index range."""
+    window = hann_window(y.shape[1])
+    ss_out[:, :] = np.asarray(
+        summary_statistics_batch(y, window=window, fourier_range=list(fourier_range)),
+        dtype=np.float64,
+    )
+
+
+def build_stats_fn(*, fourier_range: tuple[int, ...] | None = None):
+    """Create a picklable summary-statistics function."""
+    if fourier_range is None:
+        return stats_fn_batch
+    return partial(stats_fn_batch_fourier, fourier_range=fourier_range)
+
+
+def observed_summary_statistics(
+    sn_data: np.ndarray,
+    *,
+    fourier_range: tuple[int, ...] | None = None,
+) -> np.ndarray:
     """Compute observed summary statistics."""
-    return np.asarray(summary_statistics(sn_data), dtype=np.float64).reshape(-1)
+    window = None if fourier_range is None else hann_window(len(sn_data))
+    indices = None if fourier_range is None else list(fourier_range)
+    return np.asarray(
+        summary_statistics(sn_data, window=window, fourier_range=indices),
+        dtype=np.float64,
+    ).reshape(-1)
 
 
 def init_julia_quiet() -> None:

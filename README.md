@@ -94,6 +94,53 @@ Supported command-line arguments:
   `<dataset>_<algorithm>`.
 - `--previous-run-name`
   Name of the saved run to continue from when `--from-previous 1` is used.
+- `--fourier-range`
+  Optional custom Fourier indices for the summary statistics. If omitted, the
+  run uses the default definition from the shared `sdde_model` package:
+  `1:6:120`, which gives 20 summary statistics.
+
+### Custom Fourier Summary Statistics
+
+By default, SABC uses the FFT-based summary statistics defined in the shared
+`sdde_model` package. For each time series, the model applies a Hann window,
+computes the inverse FFT, and keeps the absolute values at Fourier indices
+`1:6:120`:
+
+```text
+1, 7, 13, ..., 115
+```
+
+These are Julia/1-based indices and produce 20 summary statistics.
+
+To try a different regular range, pass `--fourier-range start:step:stop`.
+For example, this uses 10 Fourier components:
+
+```bash
+python3 SABC_SolarDynamo.py \
+  --dataset synthetic \
+  --synthetic-data-file sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv \
+  --algorithm single_eps \
+  --fourier-range 1:6:60
+```
+
+which selects:
+
+```text
+1, 7, 13, ..., 55
+```
+
+Irregular selections are also supported by passing a Python-style list:
+
+```bash
+python3 SABC_SolarDynamo.py \
+  --dataset synthetic \
+  --synthetic-data-file sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv \
+  --algorithm single_eps \
+  --fourier-range '[1,2,5,9,12,28]'
+```
+
+The current default FFT summary-statistics function remains unchanged and is
+used whenever `--fourier-range` is not provided.
 
 Example of continuing a previous run:
 

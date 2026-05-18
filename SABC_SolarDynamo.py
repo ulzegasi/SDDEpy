@@ -9,6 +9,7 @@ Supports:
 from __future__ import annotations
 
 import argparse
+import ast
 from pathlib import Path
 import sys
 import time
@@ -18,11 +19,11 @@ import numpy as np
 from process_fdist import make_process_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
+    build_stats_fn,
     build_simulator,
     init_julia_quiet,
     load_dataset,
     observed_summary_statistics,
-    stats_fn_batch,
 )
 
 
@@ -65,6 +66,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--n-workers", type=int, default=N_WORKERS)
     parser.add_argument("--run-name", default=RUN_NAME)
     parser.add_argument("--previous-run-name", default=PREVIOUS_RUN_NAME)
+    parser.add_argument(
+        "--fourier-range",
+        default=None,
+        help=(
+            "Optional 1-based Fourier indices for summary statistics. Accepts "
+            "Julia-style start:step:stop, e.g. 1:6:120, or a Python-style list, "
+            "e.g. '[1,2,5,9,12,28]'. Defaults to sdde_model's 1:6:120."
+        ),
+    )
     args = parser.parse_args()
     if args.dataset == "synthetic":
         if args.synthetic_data_file is None:
@@ -72,6 +82,49 @@ def _parse_args() -> argparse.Namespace:
         if Path(args.synthetic_data_file).name != args.synthetic_data_file:
             parser.error("--synthetic-data-file must be a file name, not a path")
     return args
+
+
+def _parse_fourier_range(value: str | None) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+
+    value = value.strip()
+    if not value:
+        raise ValueError("--fourier-range cannot be empty")
+
+    if ":" in value:
+        parts = value.split(":")
+        if len(parts) != 3:
+            raise ValueError("Use --fourier-range start:step:stop, for example 1:6:120")
+        start, step, stop = (int(part.strip()) for part in parts)
+        if step == 0:
+            raise ValueError("--fourier-range step cannot be 0")
+        if (stop - start) * step < 0:
+            raise ValueError("--fourier-range step points away from stop")
+
+        indices = []
+        current = start
+        if step > 0:
+            while current <= stop:
+                indices.append(current)
+                current += step
+        else:
+            while current >= stop:
+                indices.append(current)
+                current += step
+    else:
+        parsed = ast.literal_eval(value)
+        if isinstance(parsed, int):
+            indices = [parsed]
+        else:
+            indices = list(parsed)
+
+    fourier_range = tuple(int(index) for index in indices)
+    if not fourier_range:
+        raise ValueError("--fourier-range must contain at least one index")
+    if any(index < 1 for index in fourier_range):
+        raise ValueError("--fourier-range uses Julia/1-based indices, so all values must be >= 1")
+    return fourier_range
 
 
 def _default_run_name(dataset: str, algorithm: str) -> str:
@@ -209,14 +262,15 @@ def main() -> None:
         datadir,
         synthetic_data_path=synthetic_data_path,
     )
+    fourier_range = _parse_fourier_range(args.fourier_range)
 
     # Problem-specific simulator/statistics functions live in an import-safe helper
     # module so they can be used safely from multiprocessing "spawn" workers.
     simulator = build_simulator(Twarmup=200, Tobs=Tobs_without_warmup)
-    stats_fn = stats_fn_batch
+    stats_fn = build_stats_fn(fourier_range=fourier_range)
 
     # Observed summary statistics.
-    ss_obs = observed_summary_statistics(SNdata)
+    ss_obs = observed_summary_statistics(SNdata, fourier_range=fourier_range)
     n_stats = int(ss_obs.size)
 
     worker_backend = "process" if args.n_workers > 1 else "thread"
@@ -311,6 +365,7 @@ def main() -> None:
     if args.dataset == "synthetic":
         print(f"Synthetic data path: {synthetic_data_path}")
     print(f"Algorithm used: {args.algorithm}")
+    print(f"Fourier range used: {fourier_range if fourier_range is not None else 'default 1:6:120'}")
     print(f"Observed years used: {SNyrs[0]} - {SNyrs[-1]} (n={Tobs_without_warmup})")
     print(f"Number of observed summary stats: {n_stats}")
     print(f"n_workers used: {args.n_workers} ({worker_backend})")
