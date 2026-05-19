@@ -22,4 +22,7 @@ echo "Activating Conda environment: $env_name"
 conda activate "$env_name"
 
 export TMPDIR=/cfs/earth/scratch/ulzg/.tmp
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+export MPLCONFIGDIR="$TMPDIR/matplotlib"
+mkdir -p "$TMPDIR" "$MPLCONFIGDIR"
 export JULIA_NUM_THREADS=1
