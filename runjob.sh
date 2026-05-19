@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SYNs1py
+#SBATCH --job-name=SYNs3py
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -33,7 +33,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_1"
+RUN_NAME="${DATASET}_${algorithm_label}_3"
 
 # ==============================
 # Environment setup
@@ -41,7 +41,7 @@ RUN_NAME="${DATASET}_${algorithm_label}_1"
 # IMPORTANT: submit a job using this script from a shell where sddepy_env is NOT already activated.
 # Let this script handle conda activation.
 
-. /cfs/earth/scratch/ulzg/SABCpy/load_sddepy_env.sh
+. /cfs/earth/scratch/ulzg/SABCpy/SDDEpy/load_sddepy_env.sh
 
 export JULIA_DEPOT_PATH=/cfs/earth/scratch/ulzg/.julia
 mkdir -p "$JULIA_DEPOT_PATH"
