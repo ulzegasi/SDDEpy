@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .vscode/
 output/
+Slurm-*/
 julia_env/.CondaPkg/
