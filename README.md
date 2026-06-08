@@ -115,17 +115,19 @@ Supported command-line arguments:
 - `--previous-run-name`
   Name of the saved run to continue from when `--from-previous 1` is used.
 - `--summary-stats`
-  Selects the summary-statistics backend. Choices: `fft`, `enca`. Default:
+  Selects the summary-statistics backend. Choices: `fft`, `enca`, `mlp`. Default:
   `fft`.
 - `--fourier-range`
   Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
   uses the default definition from the shared `sdde_model` package: `1:6:120`,
   which gives 20 summary statistics.
 - `--enca-run-dir`
-  ENCA training-run directory used when `--summary-stats enca`. It must contain
-  `hyper_parameters.json` and TensorFlow checkpoint files.
+  ENCA training-run directory used when `--summary-stats enca` or
+  `--summary-stats mlp`. It must contain `hyper_parameters.json` and
+  TensorFlow checkpoint files.
 - `--enca-checkpoint-basename`
-  Checkpoint family to load when `--summary-stats enca`. Default:
+  Checkpoint family to load when `--summary-stats enca` or
+  `--summary-stats mlp`. Default:
   `model_best_ckpt`.
 
 ### Custom Fourier Summary Statistics
@@ -174,15 +176,31 @@ used whenever `--fourier-range` is not provided.
 ### ENCA Encoder Summary Statistics
 
 The driver can also use a trained ENCA encoder as the summary-statistics
-generator. In this mode, each simulated or observed time series is reshaped from
-`(Tobs,)` to `(Tobs, 1)` and passed through the encoder. The encoder output
-becomes the SABC summary-statistics vector.
+generator. There are two ENCA-backed modes:
+
+- `--summary-stats enca` uses the original Conv1D ENCA encoder. Each simulated
+  or observed time series is reshaped from `(Tobs,)` to `(Tobs, 1)` and passed
+  through the encoder.
+- `--summary-stats mlp` uses a Fourier/MLP ENCA encoder. Each simulated or
+  observed time series is first transformed with a Hann window, FFT amplitudes,
+  the first `num_fft_components` components, and
+  `log(amplitude + fft_log_eps)`, using values saved in the ENCA run's
+  `hyper_parameters.json`.
+
+In both modes, the encoder output becomes the SABC summary-statistics vector.
 
 Use ENCA summaries by setting:
 
 ```bash
 --summary-stats enca
 --enca-run-dir /path/to/enca/run
+```
+
+Use Fourier/MLP ENCA summaries by setting:
+
+```bash
+--summary-stats mlp
+--enca-run-dir /path/to/mlp/enca/run
 ```
 
 The ENCA run directory must contain:
@@ -242,7 +260,7 @@ The ENCA backend checks that the selected dataset length matches the encoder's
 `len_timeseries = 271` is used with a dataset of a different length.
 
 TensorFlow is required only for `--summary-stats enca`. Standard FFT runs do not
-import TensorFlow.
+import TensorFlow. The `mlp` backend also requires TensorFlow.
 
 For Slurm or other batch-system runs, [`runjob.sh`](/Users/ulzg/SABC/SDDEpy/runjob.sh)
 exposes the same choice in the editable variables section. Set
@@ -250,7 +268,7 @@ exposes the same choice in the editable variables section. Set
 using:
 
 ```bash
-SUMMARY_STATS="enca"     # "fft" or "enca"
+SUMMARY_STATS="enca"     # "fft", "enca", or "mlp"
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
 ENCA_RUN_DIR="/path/on/your/cluster/sdde_ENCA_runs/20260504_enca_z10_3"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
@@ -259,8 +277,8 @@ ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 On a different cluster or filesystem, only the path values and environment
 activation commands should need to change; the Python options are the same.
 
-When `SUMMARY_STATS="enca"`, `FOURIER_RANGE` is ignored and not passed to the
-Python driver.
+When `SUMMARY_STATS` is `enca` or `mlp`, `FOURIER_RANGE` is ignored and not
+passed to the Python driver.
 
 Example of continuing a previous run:
 

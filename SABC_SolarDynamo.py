@@ -16,7 +16,7 @@ import time
 
 import numpy as np
 
-from enca_summary_stats import build_enca_summary_stats
+from enca_summary_stats import build_enca_summary_stats, build_mlp_summary_stats
 from process_fdist import make_process_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
@@ -49,7 +49,7 @@ LOCAL_OUT_DIR = PROJECT_DIR / "output"
 SYNTHETIC_DATA_DIR = LOCAL_DATA_DIR / "synthetic_data"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
-VALID_SUMMARY_STATS = ("fft", "enca")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -72,7 +72,11 @@ def _parse_args() -> argparse.Namespace:
         "--summary-stats",
         choices=VALID_SUMMARY_STATS,
         default="fft",
-        help="Summary-statistics backend. 'fft' keeps the current Fourier summaries; 'enca' uses an ENCA encoder.",
+        help=(
+            "Summary-statistics backend. 'fft' keeps the current Fourier summaries; "
+            "'enca' uses the original time-series ENCA encoder; "
+            "'mlp' uses a Fourier/MLP ENCA encoder."
+        ),
     )
     parser.add_argument(
         "--fourier-range",
@@ -91,7 +95,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--enca-checkpoint-basename",
         default="model_best_ckpt",
-        help="Checkpoint basename to load for --summary-stats enca. Defaults to model_best_ckpt.",
+        help=(
+            "Checkpoint basename to load for --summary-stats enca/mlp. "
+            "Defaults to model_best_ckpt."
+        ),
     )
     args = parser.parse_args()
     if args.dataset == "synthetic":
@@ -99,9 +106,9 @@ def _parse_args() -> argparse.Namespace:
             parser.error("Missing data file, specify --synthetic-data-file")
         if Path(args.synthetic_data_file).name != args.synthetic_data_file:
             parser.error("--synthetic-data-file must be a file name, not a path")
-    if args.summary_stats == "enca":
+    if args.summary_stats in ("enca", "mlp"):
         if args.enca_run_dir is None:
-            parser.error("--summary-stats enca requires --enca-run-dir")
+            parser.error(f"--summary-stats {args.summary_stats} requires --enca-run-dir")
         if args.fourier_range is not None:
             parser.error("--fourier-range can only be used with --summary-stats fft")
     return args
@@ -303,10 +310,27 @@ def main() -> None:
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
         )
+        if enca_stats.config.representation_mode != "time":
+            raise ValueError(
+                "--summary-stats enca requires an original time-series ENCA run "
+                f"(representation_mode='time'); got {enca_stats.config.representation_mode!r}. "
+                "Use --summary-stats mlp for Fourier/MLP ENCA runs."
+            )
         fourier_range = None
         stats_fn = enca_stats.batch
         ss_obs = enca_stats.observed(SNdata)
         summary_stats_label = "enca"
+        summary_stats_detail = f"{args.enca_run_dir} ({args.enca_checkpoint_basename})"
+    elif args.summary_stats == "mlp":
+        mlp_stats = build_mlp_summary_stats(
+            run_dir=args.enca_run_dir,
+            checkpoint_basename=args.enca_checkpoint_basename,
+            expected_tobs=Tobs_without_warmup,
+        )
+        fourier_range = None
+        stats_fn = mlp_stats.batch
+        ss_obs = mlp_stats.observed(SNdata)
+        summary_stats_label = "mlp"
         summary_stats_detail = f"{args.enca_run_dir} ({args.enca_checkpoint_basename})"
     else:
         raise ValueError(f"Unknown summary-statistics backend: {args.summary_stats}")

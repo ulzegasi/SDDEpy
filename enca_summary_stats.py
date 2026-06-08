@@ -17,6 +17,9 @@ class EncaSummaryStatsConfig:
     checkpoint_basename: str
     len_timeseries: int
     ndims_latent: int
+    representation_mode: str = "time"
+    num_fft_components: int | None = None
+    fft_log_eps: float = 1e-8
 
 
 _ENCODER_CACHE: dict[EncaSummaryStatsConfig, object] = {}
@@ -79,7 +82,28 @@ def _import_tensorflow():
     return tf
 
 
-def _build_encoder(tf, *, len_timeseries: int, ndims_latent: int):
+def _build_encoder(
+    tf,
+    *,
+    len_timeseries: int,
+    ndims_latent: int,
+    representation_mode: str,
+    num_fft_components: int | None,
+):
+    if representation_mode == "fourier_amplitude":
+        if num_fft_components is None:
+            raise ValueError("num_fft_components is required for MLP/Fourier ENCA")
+
+        x_input = tf.keras.layers.Input(shape=[num_fft_components], name="fft_amplitudes")
+        x = tf.keras.layers.Dense(256, activation="relu", name="enc_dense_1")(x_input)
+        x = tf.keras.layers.Dense(256, activation="relu", name="enc_dense_2")(x)
+        x = tf.keras.layers.Dense(128, activation="relu", name="enc_dense_3")(x)
+        latent_space = tf.keras.layers.Dense(ndims_latent, activation=None, name="latent_space")(x)
+        return tf.keras.Model(inputs=x_input, outputs=latent_space)
+
+    if representation_mode != "time":
+        raise ValueError(f"Unknown ENCA representation_mode: {representation_mode}")
+
     conv_fn = lambda filters, act=None, name=None: tf.keras.layers.Conv1D(
         filters=filters,
         kernel_size=3,
@@ -112,6 +136,8 @@ def _load_encoder(config: EncaSummaryStatsConfig):
         tf,
         len_timeseries=config.len_timeseries,
         ndims_latent=config.ndims_latent,
+        representation_mode=config.representation_mode,
+        num_fft_components=config.num_fft_components,
     )
     ckpt = tf.train.Checkpoint(encoder=encoder)
     status = ckpt.restore(_checkpoint_prefix(config.run_dir, config.checkpoint_basename))
@@ -121,23 +147,48 @@ def _load_encoder(config: EncaSummaryStatsConfig):
     return encoder
 
 
-def _prepare_samples(data: np.ndarray, *, len_timeseries: int) -> np.ndarray:
+def _timeseries_to_fft_log_amplitudes(
+    samples: np.ndarray,
+    *,
+    num_fft_components: int,
+    fft_log_eps: float,
+) -> np.ndarray:
+    n_time = samples.shape[1]
+    window = np.hanning(n_time).astype(np.float32)
+    amplitudes = np.abs(np.fft.fft(samples * window[None, :], axis=1)) / float(n_time)
+    return np.log(amplitudes[:, :num_fft_components] + fft_log_eps).astype(np.float32)
+
+
+def _prepare_samples(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
     samples = np.asarray(data, dtype=np.float32)
     if samples.ndim == 1:
         samples = samples.reshape(1, -1)
     if samples.ndim != 2:
         raise ValueError(f"ENCA samples must be 1D or 2D, got shape {samples.shape}")
-    if samples.shape[1] != len_timeseries:
+    if samples.shape[1] != config.len_timeseries:
         raise ValueError(
-            f"ENCA encoder expects time-series length {len_timeseries}, "
+            f"ENCA encoder expects time-series length {config.len_timeseries}, "
             f"got {samples.shape[1]}"
         )
-    return samples[:, :, np.newaxis]
+
+    if config.representation_mode == "fourier_amplitude":
+        if config.num_fft_components is None:
+            raise ValueError("num_fft_components is required for MLP/Fourier ENCA")
+        return _timeseries_to_fft_log_amplitudes(
+            samples,
+            num_fft_components=config.num_fft_components,
+            fft_log_eps=config.fft_log_eps,
+        )
+
+    if config.representation_mode == "time":
+        return samples[:, :, np.newaxis]
+
+    raise ValueError(f"Unknown ENCA representation_mode: {config.representation_mode}")
 
 
 def _encode(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
     encoder = _load_encoder(config)
-    samples = _prepare_samples(data, len_timeseries=config.len_timeseries)
+    samples = _prepare_samples(config, data)
     z = encoder(samples, training=False).numpy()
     z = np.asarray(z, dtype=np.float64)
     if z.ndim != 2 or z.shape[1] != config.ndims_latent:
@@ -186,6 +237,11 @@ def build_enca_summary_stats(
     hyper_parameters = _load_hyper_parameters(run_dir)
     len_timeseries = int(hyper_parameters["len_timeseries"])
     ndims_latent = int(hyper_parameters["ndims_latent"])
+    representation_mode = str(hyper_parameters.get("representation_mode", "time"))
+    num_fft_components = hyper_parameters.get("num_fft_components")
+    if num_fft_components is not None:
+        num_fft_components = int(num_fft_components)
+    fft_log_eps = float(hyper_parameters.get("fft_log_eps", 1e-8))
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(
@@ -198,6 +254,29 @@ def build_enca_summary_stats(
         checkpoint_basename=checkpoint_basename,
         len_timeseries=len_timeseries,
         ndims_latent=ndims_latent,
+        representation_mode=representation_mode,
+        num_fft_components=num_fft_components,
+        fft_log_eps=fft_log_eps,
     )
     _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
     return EncaSummaryStats(config)
+
+
+def build_mlp_summary_stats(
+    *,
+    run_dir: str | Path,
+    checkpoint_basename: str = "model_best_ckpt",
+    expected_tobs: int | None = None,
+) -> EncaSummaryStats:
+    stats = build_enca_summary_stats(
+        run_dir=run_dir,
+        checkpoint_basename=checkpoint_basename,
+        expected_tobs=expected_tobs,
+    )
+    if stats.config.representation_mode != "fourier_amplitude":
+        raise ValueError(
+            "--summary-stats mlp requires an ENCA run with "
+            'representation_mode="fourier_amplitude"; '
+            f"got {stats.config.representation_mode!r}"
+        )
+    return stats

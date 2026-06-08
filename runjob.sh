@@ -23,9 +23,9 @@ DATASET="synthetic"          # "obsSN", "C14", or "synthetic"
 SYNTHETIC_DATA_FILE="sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
-SUMMARY_STATS="fft"      # "fft" or "enca"
+SUMMARY_STATS="fft"      # "fft", "enca", or "mlp"
 FOURIER_RANGE="1:6:60"   # default in code is 1:6:120; set empty string to use default
-ENCA_RUN_DIR=""          # required when SUMMARY_STATS="enca"
+ENCA_RUN_DIR=""          # required when SUMMARY_STATS is "enca" or "mlp"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 
 algorithm_label="single"
@@ -72,15 +72,15 @@ echo "RUN_NAME=$RUN_NAME"
 echo "SUMMARY_STATS=$SUMMARY_STATS"
 if [[ "$SUMMARY_STATS" == "fft" ]]; then
   echo "FOURIER_RANGE=${FOURIER_RANGE:-default 1:6:120}"
-elif [[ "$SUMMARY_STATS" == "enca" ]]; then
+elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" ]]; then
   if [[ -z "$ENCA_RUN_DIR" ]]; then
-    echo "ERROR: ENCA_RUN_DIR must be set when SUMMARY_STATS=enca" >&2
+    echo "ERROR: ENCA_RUN_DIR must be set when SUMMARY_STATS=$SUMMARY_STATS" >&2
     exit 1
   fi
   echo "ENCA_RUN_DIR=$ENCA_RUN_DIR"
   echo "ENCA_CHECKPOINT_BASENAME=$ENCA_CHECKPOINT_BASENAME"
 else
-  echo "ERROR: SUMMARY_STATS must be fft or enca, got '$SUMMARY_STATS'" >&2
+  echo "ERROR: SUMMARY_STATS must be fft, enca, or mlp, got '$SUMMARY_STATS'" >&2
   exit 1
 fi
 
@@ -101,7 +101,7 @@ if [[ "$SUMMARY_STATS" == "fft" && -n "$FOURIER_RANGE" ]]; then
   cmd+=(--fourier-range "$FOURIER_RANGE")
 fi
 
-if [[ "$SUMMARY_STATS" == "enca" ]]; then
+if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" ]]; then
   cmd+=(--enca-run-dir "$ENCA_RUN_DIR")
   cmd+=(--enca-checkpoint-basename "$ENCA_CHECKPOINT_BASENAME")
 fi
