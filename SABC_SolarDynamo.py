@@ -88,9 +88,11 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--train-run-dir",
         "--enca-run-dir",
+        dest="train_run_dir",
         default=None,
-        help="ENCA training run directory containing hyper_parameters.json and checkpoints.",
+        help="Training run directory containing hyper_parameters.json and checkpoints for --summary-stats enca/mlp.",
     )
     parser.add_argument(
         "--enca-checkpoint-basename",
@@ -107,8 +109,8 @@ def _parse_args() -> argparse.Namespace:
         if Path(args.synthetic_data_file).name != args.synthetic_data_file:
             parser.error("--synthetic-data-file must be a file name, not a path")
     if args.summary_stats in ("enca", "mlp"):
-        if args.enca_run_dir is None:
-            parser.error(f"--summary-stats {args.summary_stats} requires --enca-run-dir")
+        if args.train_run_dir is None:
+            parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
         if args.fourier_range is not None:
             parser.error("--fourier-range can only be used with --summary-stats fft")
     return args
@@ -306,7 +308,7 @@ def main() -> None:
         summary_stats_detail = fourier_range if fourier_range is not None else "default 1:6:120"
     elif args.summary_stats == "enca":
         enca_stats = build_enca_summary_stats(
-            run_dir=args.enca_run_dir,
+            run_dir=args.train_run_dir,
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
         )
@@ -320,10 +322,10 @@ def main() -> None:
         stats_fn = enca_stats.batch
         ss_obs = enca_stats.observed(SNdata)
         summary_stats_label = "enca"
-        summary_stats_detail = f"{args.enca_run_dir} ({args.enca_checkpoint_basename})"
+        summary_stats_detail = f"{args.train_run_dir} ({args.enca_checkpoint_basename})"
     elif args.summary_stats == "mlp":
         mlp_stats = build_mlp_summary_stats(
-            run_dir=args.enca_run_dir,
+            run_dir=args.train_run_dir,
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
         )
@@ -331,7 +333,7 @@ def main() -> None:
         stats_fn = mlp_stats.batch
         ss_obs = mlp_stats.observed(SNdata)
         summary_stats_label = "mlp"
-        summary_stats_detail = f"{args.enca_run_dir} ({args.enca_checkpoint_basename})"
+        summary_stats_detail = f"{args.train_run_dir} ({args.enca_checkpoint_basename})"
     else:
         raise ValueError(f"Unknown summary-statistics backend: {args.summary_stats}")
 

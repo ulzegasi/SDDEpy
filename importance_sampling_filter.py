@@ -15,6 +15,7 @@ empirical retained fraction is closest to the target.
 from __future__ import annotations
 
 import argparse
+import ast
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,14 +24,15 @@ import numpy as np
 from scipy.optimize import brentq
 from scipy.stats import gaussian_kde
 
+from enca_summary_stats import build_enca_summary_stats, build_mlp_summary_stats
 from process_fdist import make_process_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
+    build_stats_fn,
     build_simulator,
     init_julia_quiet,
     load_dataset,
     observed_summary_statistics,
-    stats_fn_batch,
 )
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -42,6 +44,7 @@ DEFAULT_SYNTHETIC_DATA_FILE = "sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 DEFAULT_DATASETS = ("obsSN", "C14")
 VALID_ALGORITHMS = ("single", "multi")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp")
 
 
 class Prior:
@@ -104,6 +107,35 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--summary-stats",
+        choices=VALID_SUMMARY_STATS,
+        default="fft",
+        help=(
+            "Summary-statistics backend used to reconstruct distances. Must match "
+            "the backend used by the original SABC inference run."
+        ),
+    )
+    parser.add_argument(
+        "--fourier-range",
+        default=None,
+        help=(
+            "Optional 1-based Fourier indices for --summary-stats fft. Accepts "
+            "Julia-style start:step:stop, e.g. 1:6:120, or a Python-style list."
+        ),
+    )
+    parser.add_argument(
+        "--train-run-dir",
+        "--enca-run-dir",
+        dest="train_run_dir",
+        default=None,
+        help="Training run directory required for --summary-stats enca/mlp.",
+    )
+    parser.add_argument(
+        "--enca-checkpoint-basename",
+        default="model_best_ckpt",
+        help="Checkpoint basename to load for --summary-stats enca/mlp.",
+    )
+    parser.add_argument(
         "--run-name",
         action="append",
         default=[],
@@ -138,7 +170,55 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show histogram overlays interactively for each processed run.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.summary_stats in ("enca", "mlp") and args.train_run_dir is None:
+        parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
+    if args.summary_stats in ("enca", "mlp") and args.fourier_range is not None:
+        parser.error("--fourier-range can only be used with --summary-stats fft")
+    return args
+
+
+def _parse_fourier_range(value: str | None) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+
+    value = value.strip()
+    if not value:
+        raise ValueError("--fourier-range cannot be empty")
+
+    if ":" in value:
+        parts = value.split(":")
+        if len(parts) != 3:
+            raise ValueError("Use --fourier-range start:step:stop, for example 1:6:120")
+        start, step, stop = (int(part.strip()) for part in parts)
+        if step == 0:
+            raise ValueError("--fourier-range step cannot be 0")
+        if (stop - start) * step < 0:
+            raise ValueError("--fourier-range step points away from stop")
+
+        indices = []
+        current = start
+        if step > 0:
+            while current <= stop:
+                indices.append(current)
+                current += step
+        else:
+            while current >= stop:
+                indices.append(current)
+                current += step
+    else:
+        parsed = ast.literal_eval(value)
+        if isinstance(parsed, int):
+            indices = [parsed]
+        else:
+            indices = list(parsed)
+
+    fourier_range = tuple(int(index) for index in indices)
+    if not fourier_range:
+        raise ValueError("--fourier-range must contain at least one index")
+    if any(index < 1 for index in fourier_range):
+        raise ValueError("--fourier-range uses Julia/1-based indices, so all values must be >= 1")
+    return fourier_range
 
 
 def _import_sabc_io():
@@ -170,6 +250,8 @@ def _dataset_from_run_name(run_name: str) -> str:
     for dataset in VALID_DATASETS:
         if run_name.startswith(f"{dataset}_"):
             return dataset
+    if run_name.startswith("synthetic"):
+        return "synthetic"
     raise ValueError(f"Could not infer dataset from run name '{run_name}'.")
 
 
@@ -229,16 +311,47 @@ def _build_reconstruction_f_dist(
     n_workers: int,
     seed: int,
     synthetic_data_path: Path | None,
+    summary_stats: str,
+    fourier_range: tuple[int, ...] | None,
+    train_run_dir: str | None,
+    enca_checkpoint_basename: str,
 ):
     _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
-    ss_obs = observed_summary_statistics(obs_data)
     simulator = build_simulator(Twarmup=200, Tobs=t_obs)
+
+    if summary_stats == "fft":
+        stats_fn = build_stats_fn(fourier_range=fourier_range)
+        ss_obs = observed_summary_statistics(obs_data, fourier_range=fourier_range)
+    elif summary_stats == "enca":
+        enca_stats = build_enca_summary_stats(
+            run_dir=train_run_dir,
+            checkpoint_basename=enca_checkpoint_basename,
+            expected_tobs=t_obs,
+        )
+        if enca_stats.config.representation_mode != "time":
+            raise ValueError(
+                "--summary-stats enca requires an original time-series ENCA run "
+                f"(representation_mode='time'); got {enca_stats.config.representation_mode!r}. "
+                "Use --summary-stats mlp for Fourier/MLP ENCA runs."
+            )
+        stats_fn = enca_stats.batch
+        ss_obs = enca_stats.observed(obs_data)
+    elif summary_stats == "mlp":
+        mlp_stats = build_mlp_summary_stats(
+            run_dir=train_run_dir,
+            checkpoint_basename=enca_checkpoint_basename,
+            expected_tobs=t_obs,
+        )
+        stats_fn = mlp_stats.batch
+        ss_obs = mlp_stats.observed(obs_data)
+    else:
+        raise ValueError(f"Unknown summary-statistics backend: {summary_stats}")
 
     return make_process_f_dist(
         n_samples=t_obs,
         ss_obs=ss_obs,
         simulator=simulator,
-        stats_fn=stats_fn_batch,
+        stats_fn=stats_fn,
         seed=seed,
         distance="abs",
         n_workers=n_workers,
@@ -253,6 +366,10 @@ def _reconstruct_rho(
     run_name: str,
     dataset: str,
     synthetic_data_path: Path | None,
+    summary_stats: str,
+    fourier_range: tuple[int, ...] | None,
+    train_run_dir: str | None,
+    enca_checkpoint_basename: str,
     n_repeats: int,
     n_workers: int,
     seed: int,
@@ -265,6 +382,10 @@ def _reconstruct_rho(
         n_workers=n_workers,
         seed=seed,
         synthetic_data_path=synthetic_data_path,
+        summary_stats=summary_stats,
+        fourier_range=fourier_range,
+        train_run_dir=train_run_dir,
+        enca_checkpoint_basename=enca_checkpoint_basename,
     )
     n_stats = int(f_dist.ss_obs.size)
     rho_sum = np.zeros((population.shape[0], n_stats), dtype=float)
@@ -429,6 +550,7 @@ def _show_overlay_plot(run_name: str, reconstructed: np.ndarray, sabc: np.ndarra
 
 def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
     dataset = _dataset_from_run_name(run_name)
+    fourier_range = _parse_fourier_range(args.fourier_range)
     synthetic_data_path = None
     if dataset == "synthetic":
         synthetic_data_path = _resolve_synthetic_data_path(args.synthetic_data_file)
@@ -438,11 +560,19 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
     population = _load_population(run_name)
     n_particles = population.shape[0]
 
+    print(
+        f"[{run_name}] reconstructing with summary_stats={args.summary_stats}",
+        flush=True,
+    )
     reconstructed_rho = _reconstruct_rho(
         population,
         run_name=run_name,
         dataset=dataset,
         synthetic_data_path=synthetic_data_path,
+        summary_stats=args.summary_stats,
+        fourier_range=fourier_range,
+        train_run_dir=args.train_run_dir,
+        enca_checkpoint_basename=args.enca_checkpoint_basename,
         n_repeats=args.n_repeats,
         n_workers=args.n_workers,
         seed=args.seed,

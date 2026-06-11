@@ -121,8 +121,8 @@ Supported command-line arguments:
   Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
   uses the default definition from the shared `sdde_model` package: `1:6:120`,
   which gives 20 summary statistics.
-- `--enca-run-dir`
-  ENCA training-run directory used when `--summary-stats enca` or
+- `--train-run-dir`
+  Training-run directory used when `--summary-stats enca` or
   `--summary-stats mlp`. It must contain `hyper_parameters.json` and
   TensorFlow checkpoint files.
 - `--enca-checkpoint-basename`
@@ -184,7 +184,7 @@ generator. There are two ENCA-backed modes:
 - `--summary-stats mlp` uses a Fourier/MLP ENCA encoder. Each simulated or
   observed time series is first transformed with a Hann window, FFT amplitudes,
   the first `num_fft_components` components, and
-  `log(amplitude + fft_log_eps)`, using values saved in the ENCA run's
+  `log(amplitude + fft_log_eps)`, using values saved in the training run's
   `hyper_parameters.json`.
 
 In both modes, the encoder output becomes the SABC summary-statistics vector.
@@ -193,17 +193,19 @@ Use ENCA summaries by setting:
 
 ```bash
 --summary-stats enca
---enca-run-dir /path/to/enca/run
+--train-run-dir /path/to/enca/run
 ```
 
 Use Fourier/MLP ENCA summaries by setting:
 
 ```bash
 --summary-stats mlp
---enca-run-dir /path/to/mlp/enca/run
+--train-run-dir /path/to/sdde_MLP_runs/<run_name>
 ```
 
-The ENCA run directory must contain:
+The legacy option name `--enca-run-dir` is still accepted as an alias for backward compatibility.
+
+The training run directory must contain:
 
 ```text
 hyper_parameters.json
@@ -226,7 +228,7 @@ will produce 10 summary statistics for each time series. These can be interprete
 as the ENCA latent variables, for example 5 parameter-regression coordinates plus
 5 additional latent coordinates, depending on how the ENCA model was trained.
 
-Example, using a placeholder ENCA run path:
+Example, using a placeholder training run path:
 
 ```bash
 python3 SABC_SolarDynamo.py \
@@ -234,7 +236,7 @@ python3 SABC_SolarDynamo.py \
   --synthetic-data-file sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv \
   --algorithm multi_eps \
   --summary-stats enca \
-  --enca-run-dir /path/to/sdde_ENCA_runs/20260504_enca_z10_3
+  --train-run-dir /path/to/sdde_ENCA_runs/20260504_enca_z10_3
 ```
 
 To use a specific checkpoint family instead of the default `model_best_ckpt`,
@@ -247,30 +249,29 @@ pass:
 The loader selects the highest-numbered matching checkpoint file, for example
 `model_best_ckpt-675000` among all `model_best_ckpt-*.index` files.
 
-The ENCA run path is machine-specific. Use the absolute path that exists on the
+The training run path is machine-specific. Use the absolute path that exists on the
 machine where the inference is running. For example, on one local workstation it
 may look like:
 
 ```bash
---enca-run-dir /Users/ulzg/switchdrive/ZHAW_BISTOM/RENKU/enca-inca/sdde_ENCA_runs/20260504_enca_z10_3
+--train-run-dir /Users/ulzg/switchdrive/ZHAW_BISTOM/RENKU/enca-inca/sdde_ENCA_runs/20260504_enca_z10_3
 ```
 
 The ENCA backend checks that the selected dataset length matches the encoder's
 `len_timeseries`. It will fail early if, for example, an encoder trained for
 `len_timeseries = 271` is used with a dataset of a different length.
 
-TensorFlow is required only for `--summary-stats enca`. Standard FFT runs do not
-import TensorFlow. The `mlp` backend also requires TensorFlow.
+TensorFlow is required for `--summary-stats enca` and `--summary-stats mlp`. Standard FFT runs do not import TensorFlow.
 
 For Slurm or other batch-system runs, [`runjob.sh`](/Users/ulzg/SABC/SDDEpy/runjob.sh)
 exposes the same choice in the editable variables section. Set
-`ENCA_RUN_DIR` to the absolute ENCA run directory on the compute system you are
+`TRAIN_RUN_DIR` to the absolute training run directory on the compute system you are
 using:
 
 ```bash
 SUMMARY_STATS="enca"     # "fft", "enca", or "mlp"
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
-ENCA_RUN_DIR="/path/on/your/cluster/sdde_ENCA_runs/20260504_enca_z10_3"
+TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCA_runs/20260504_enca_z10_3"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 ```
 
@@ -332,13 +333,29 @@ To display the overlaid histogram comparison interactively, add:
 Supported command-line arguments:
 
 - `--dataset`
-  Dataset to process. Choices: `obsSN`, `C14`, `all`.
+  Dataset to process. Choices: `obsSN`, `C14`, `synthetic`, `all`.
 - `--algorithm`
   Algorithm family encoded in the saved run name. Choices: `single`, `multi`,
   `all`.
 - `--tag`
   Run suffix used in filenames such as
   `post_population_obsSN_single_77py.csv`. Default: `77py`.
+- `--synthetic-data-file`
+  Synthetic CSV path, or filename under `data/synthetic_data`, used for
+  synthetic runs.
+- `--summary-stats`
+  Summary-statistics backend used for reconstructed distances. Choices: `fft`,
+  `enca`, `mlp`. This should match the backend used by the original inference
+  run. Default: `fft`.
+- `--fourier-range`
+  Optional 1-based Fourier indices for `--summary-stats fft`, for example
+  `1:6:60` or `[1,2,5,9]`.
+- `--train-run-dir`
+  Training-run directory required when `--summary-stats enca` or
+  `--summary-stats mlp`.
+- `--enca-checkpoint-basename`
+  Checkpoint family to load when `--summary-stats enca` or `--summary-stats mlp`.
+  Default: `model_best_ckpt`.
 - `--run-name`
   Optional explicit run name. This can be passed multiple times; if used, the
   script skips the automatic dataset/algorithm expansion.

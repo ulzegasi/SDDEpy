@@ -12,7 +12,7 @@ module load miniconda3/4.12.0
 module load lsfm-init-miniconda/1.0.0
 module load openmpi/4.1.4
 
-if [[ "${SUMMARY_STATS:-fft}" == "enca" ]]; then
+if [[ "${SUMMARY_STATS:-fft}" == "enca" || "${SUMMARY_STATS:-fft}" == "mlp" ]]; then
   env_name="sddepy_enca_env"
 else
   env_name="sddepy_env"
