@@ -388,7 +388,10 @@ def main() -> None:
     # lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
     # upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
     # Try something new:
-    lower = np.array([4.0, 4.0, 9.5, 0.005, 4.0], dtype=float)
+    # lower = np.array([4.0, 4.0, 9.5, 0.005, 4.0], dtype=float)
+    # upper = np.array([10.0, 10.0, 15.0, 0.05, 15.0], dtype=float)
+    # Ulzega et al., ApJ 992, 2025, with little less noise:
+    lower = np.array([0.1, 0.1, 1.0, 0.005, 1.0], dtype=float)
     upper = np.array([10.0, 10.0, 15.0, 0.05, 15.0], dtype=float)
 
     prior = Prior(lower=lower, upper=upper)
