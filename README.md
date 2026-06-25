@@ -36,6 +36,10 @@ sddepy_enca_env  -> ENCA/MLP summaries, CPU TensorFlow
 sddepy_fno_env   -> FNO summaries, GPU-capable TensorFlow
 ```
 
+[`load_sddepy_env.sh`](/Users/ulzg/SABC/SDDEpy/load_sddepy_env.sh) selects the
+environment automatically from `SUMMARY_STATS`, so Slurm scripts should set
+`SUMMARY_STATS` before sourcing it.
+
 Install the shared SDDE model package (-e -> editable means changes in that repo are immediately visible without reinstalling.):
 
 ```bash
