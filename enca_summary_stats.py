@@ -40,6 +40,7 @@ class FnoSummaryStatsConfig:
 
 
 _FNO_ENCODER_CACHE: dict[FnoSummaryStatsConfig, object] = {}
+_FNO_ENCODE_FN_CACHE: dict[FnoSummaryStatsConfig, object] = {}
 
 
 def _load_hyper_parameters(run_dir: Path) -> dict:
@@ -427,7 +428,17 @@ def _load_fno_encoder(config: FnoSummaryStatsConfig):
 def _encode_fno(config: FnoSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
     encoder = _load_fno_encoder(config)
     samples = _prepare_fno_samples(config, data)
-    z = encoder(samples, training=False).numpy()
+    encode_fn = _FNO_ENCODE_FN_CACHE.get(config)
+    if encode_fn is None:
+        tf = _import_tensorflow()
+
+        @tf.function(reduce_retracing=True)
+        def encode_fn(x):
+            return encoder(x, training=False)
+
+        _FNO_ENCODE_FN_CACHE[config] = encode_fn
+
+    z = encode_fn(samples).numpy()
     z = np.asarray(z, dtype=np.float64)
     if z.ndim != 2 or z.shape[1] != config.ndims_latent:
         raise ValueError(
