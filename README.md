@@ -11,12 +11,29 @@ environment:
 conda activate sddepy_env
 ```
 
-For ENCA encoder summary-statistics runs, use the TensorFlow-capable environment
-defined in [`environment-enca.yml`](/Users/ulzg/SABC/SDDEpy/environment-enca.yml):
+For ENCA and MLP encoder summary-statistics runs, use the CPU TensorFlow
+environment defined in
+[`environment-enca.yml`](/Users/ulzg/SABC/SDDEpy/environment-enca.yml):
 
 ```bash
 conda env create -f environment-enca.yml
 conda activate sddepy_enca_env
+```
+
+For FNO summary-statistics runs, use a separate environment defined in
+[`environment-fno.yml`](/Users/ulzg/SABC/SDDEpy/environment-fno.yml):
+
+```bash
+conda env create -f environment-fno.yml
+conda activate sddepy_fno_env
+```
+
+The environment split is intentional:
+
+```text
+sddepy_env       -> FFT summaries
+sddepy_enca_env  -> ENCA/MLP summaries, CPU TensorFlow
+sddepy_fno_env   -> FNO summaries, GPU-capable TensorFlow
 ```
 
 Install the shared SDDE model package (-e -> editable means changes in that repo are immediately visible without reinstalling.):
@@ -32,9 +49,26 @@ available:
 pip install -e /path/to/SimulatedAnnealingABC
 ```
 
-The ENCA environment pins Python to `3.11` and `juliacall` to `0.9.31`, because
-TensorFlow and the Julia bridge are sensitive to very new Python/Juliacall
-releases. Standard FFT runs do not need TensorFlow.
+The ENCA environment pins Python to `3.11` and `juliacall` to `0.9.31`, and uses
+`tensorflow-cpu`. The FNO environment uses Python `3.10` and GPU-capable
+`tensorflow>=2.14`, matching the FNO training environment more closely.
+Standard FFT runs do not need TensorFlow.
+
+On a GPU node, verify the FNO environment before launching a long inference:
+
+```bash
+module load cuda/11.6.2
+conda activate sddepy_fno_env
+python - <<'PY'
+import tensorflow as tf
+print(tf.__version__)
+print(tf.test.is_built_with_cuda())
+print(tf.config.list_physical_devices("GPU"))
+PY
+```
+
+The GPU list should be non-empty. If it is empty, FNO inference will fall back to
+CPU and can be much slower.
 
 The shared `sdde_model` package now owns the Julia bootstrap and pinned Julia
 environment. In scripts in this repo, initialize Julia with:
@@ -274,7 +308,9 @@ The neural backend checks that the selected dataset length matches the encoder's
 `len_timeseries = 271` is used with a dataset of a different length.
 
 TensorFlow is required for `--summary-stats enca`, `--summary-stats mlp`, and
-`--summary-stats fno`. Standard FFT runs do not import TensorFlow.
+`--summary-stats fno`. Use `sddepy_enca_env` for ENCA/MLP and
+`sddepy_fno_env` for FNO if GPU acceleration is desired. Standard FFT runs do
+not import TensorFlow.
 
 For Slurm or other batch-system runs, [`runjob.sh`](/Users/ulzg/SABC/SDDEpy/runjob.sh)
 exposes the same choice in the editable variables section. Set
