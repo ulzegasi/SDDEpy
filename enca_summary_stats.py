@@ -32,13 +32,11 @@ class FnoSummaryStatsConfig:
     len_timeseries: int
     ndims_latent: int
     representation_mode: str = "time"
-    num_fft_components: int | None = None
-    fft_log_eps: float = 1e-8
+    reconstruction_loss_domain: str = "time"
     fno_modes: int = 32
     fno_width: int = 64
-    fno_depth: int = 4
-    fno_dense_width: int = 128
-    fno_use_grid: bool = True
+    fno_layers: int = 4
+    use_time_coordinate: bool = True
 
 
 _FNO_ENCODER_CACHE: dict[FnoSummaryStatsConfig, object] = {}
@@ -214,33 +212,40 @@ def _make_spectral_conv1d_layer(tf):
         def build(self, input_shape):
             in_channels = int(input_shape[-1])
             scale = 1.0 / max(1, in_channels * self.out_channels)
-            self.kernel_real = self.add_weight(
-                name="kernel_real",
-                shape=(in_channels, self.out_channels, self.modes),
+            self.weight_real = self.add_weight(
+                name="weight_real",
+                shape=(self.modes, in_channels, self.out_channels),
                 initializer=tf.keras.initializers.RandomNormal(stddev=scale),
                 trainable=True,
             )
-            self.kernel_imag = self.add_weight(
-                name="kernel_imag",
-                shape=(in_channels, self.out_channels, self.modes),
+            self.weight_imag = self.add_weight(
+                name="weight_imag",
+                shape=(self.modes, in_channels, self.out_channels),
                 initializer=tf.keras.initializers.RandomNormal(stddev=scale),
                 trainable=True,
             )
             super().build(input_shape)
 
-        def call(self, inputs):
-            n_time = tf.shape(inputs)[1]
-            x_ft = tf.signal.rfft(tf.transpose(inputs, perm=[0, 2, 1]))
-            n_freq = tf.shape(x_ft)[-1]
-            n_modes = tf.minimum(self.modes, n_freq)
+        def call(self, x):
+            n_time = tf.shape(x)[1]
+            x_ft = tf.signal.rfft(tf.transpose(x, perm=[0, 2, 1]))
+            x_ft = tf.transpose(x_ft, perm=[0, 2, 1])
 
-            weights = tf.complex(self.kernel_real[:, :, :n_modes], self.kernel_imag[:, :, :n_modes])
-            low_modes = tf.einsum("bim,iom->bom", x_ft[:, :, :n_modes], weights)
+            weights = tf.complex(self.weight_real, self.weight_imag)
+            x_ft_low = x_ft[:, : self.modes, :]
+            out_ft_low = tf.einsum("bmi,mio->bmo", x_ft_low, weights)
 
-            pad_modes = n_freq - n_modes
-            low_modes = tf.pad(low_modes, [[0, 0], [0, 0], [0, pad_modes]])
-            x = tf.signal.irfft(low_modes, fft_length=[n_time])
-            return tf.transpose(x, perm=[0, 2, 1])
+            n_freq = tf.shape(x_ft)[1]
+            pad_modes = n_freq - self.modes
+            out_ft = tf.pad(out_ft_low, [[0, 0], [0, pad_modes], [0, 0]])
+            out_ft = tf.transpose(out_ft, perm=[0, 2, 1])
+            x_out = tf.signal.irfft(out_ft, fft_length=[n_time])
+            return tf.transpose(x_out, perm=[0, 2, 1])
+
+        def compute_output_shape(self, input_shape):
+            input_shape = tf.TensorShape(input_shape).as_list()
+            input_shape[-1] = self.out_channels
+            return tf.TensorShape(input_shape)
 
         def get_config(self):
             config = super().get_config()
@@ -250,61 +255,89 @@ def _make_spectral_conv1d_layer(tf):
     return SpectralConv1D
 
 
+def _make_fno_block1d_layer(tf):
+    SpectralConv1D = _make_spectral_conv1d_layer(tf)
+
+    @tf.keras.utils.register_keras_serializable(package="sddepy")
+    class FNOBlock1D(tf.keras.layers.Layer):
+        def __init__(self, width: int, modes: int, activation: str = "gelu", **kwargs):
+            super().__init__(**kwargs)
+            self.width = int(width)
+            self.modes = int(modes)
+            self.activation_name = activation
+            self.spectral = SpectralConv1D(self.width, self.modes)
+            self.pointwise = tf.keras.layers.Conv1D(self.width, kernel_size=1)
+            self.activation = tf.keras.layers.Activation(activation)
+
+        def call(self, x):
+            x = self.spectral(x) + self.pointwise(x)
+            return self.activation(x)
+
+        def compute_output_shape(self, input_shape):
+            input_shape = tf.TensorShape(input_shape).as_list()
+            input_shape[-1] = self.width
+            return tf.TensorShape(input_shape)
+
+        def get_config(self):
+            config = super().get_config()
+            config.update(
+                {
+                    "width": self.width,
+                    "modes": self.modes,
+                    "activation": self.activation_name,
+                }
+            )
+            return config
+
+    return FNOBlock1D
+
+
+def _time_coordinate_layer(tf, len_timeseries: int, name: str):
+    time_grid = tf.linspace(0.0, 1.0, len_timeseries)
+    time_grid = tf.reshape(time_grid, [1, len_timeseries, 1])
+    return tf.keras.layers.Lambda(
+        function=lambda x: tf.tile(tf.cast(time_grid, x.dtype), [tf.shape(x)[0], 1, 1]),
+        name=name,
+    )
+
+
 def _build_fno_encoder(
     tf,
     *,
     len_timeseries: int,
     ndims_latent: int,
     representation_mode: str,
-    num_fft_components: int | None,
-    fft_log_eps: float,
     fno_modes: int,
     fno_width: int,
-    fno_depth: int,
-    fno_dense_width: int,
-    fno_use_grid: bool,
+    fno_layers: int,
+    use_time_coordinate: bool,
 ):
-    del fft_log_eps
+    if representation_mode != "time":
+        raise ValueError(
+            "--summary-stats fno expects a time-domain FNO run "
+            f"(representation_mode='time'); got {representation_mode!r}."
+        )
 
-    if representation_mode == "fourier_amplitude":
-        if num_fft_components is None:
-            raise ValueError("num_fft_components is required for Fourier/FNO summary statistics")
-        input_length = int(num_fft_components)
-        input_name = "fft_amplitudes"
-    elif representation_mode == "time":
-        input_length = int(len_timeseries)
-        input_name = "x_observation"
-    else:
-        raise ValueError(f"Unknown FNO representation_mode: {representation_mode}")
+    FNOBlock1D = _make_fno_block1d_layer(tf)
+    input_length = int(len_timeseries)
+    fno_modes = min(int(fno_modes), input_length // 2 + 1)
+    if fno_modes < 1:
+        raise ValueError("fno_modes must be at least 1.")
 
-    SpectralConv1D = _make_spectral_conv1d_layer(tf)
-    x_input = tf.keras.layers.Input(shape=[input_length, 1], name=input_name)
+    x_input = tf.keras.layers.Input(shape=[input_length, 1], name="x_observation")
     x = x_input
 
-    if fno_use_grid:
-        def append_grid(tensor):
-            grid = tf.linspace(0.0, 1.0, input_length)
-            grid = tf.reshape(grid, [1, input_length, 1])
-            grid = tf.tile(grid, [tf.shape(tensor)[0], 1, 1])
-            return tf.concat([tensor, grid], axis=-1)
+    if use_time_coordinate:
+        t = _time_coordinate_layer(tf, input_length, name="encoder_time_coordinate")(x_input)
+        x = tf.keras.layers.Concatenate(axis=-1, name="encoder_concat_time")([x, t])
 
-        x = tf.keras.layers.Lambda(append_grid, name="append_grid")(x)
-
-    x = tf.keras.layers.Dense(fno_width, name="lifting")(x)
-    for index in range(int(fno_depth)):
-        spectral = SpectralConv1D(
-            out_channels=fno_width,
-            modes=fno_modes,
-            name=f"spectral_conv_{index + 1}",
-        )(x)
-        pointwise = tf.keras.layers.Dense(fno_width, name=f"pointwise_{index + 1}")(x)
-        x = tf.keras.layers.Add(name=f"fno_add_{index + 1}")([spectral, pointwise])
-        x = tf.keras.layers.Activation("gelu", name=f"fno_gelu_{index + 1}")(x)
-
+    x = tf.keras.layers.Dense(fno_width, activation=None, name="encoder_lift")(x)
+    for index in range(int(fno_layers)):
+        x = FNOBlock1D(fno_width, fno_modes, name=f"encoder_fno_block_{index + 1}")(x)
     x = tf.keras.layers.GlobalAveragePooling1D(name="global_avg_pool")(x)
-    x = tf.keras.layers.Dense(fno_dense_width, activation="relu", name="projection_dense")(x)
-    latent_space = tf.keras.layers.Dense(ndims_latent, activation=None, name="latent_space")(x)
-    return tf.keras.Model(inputs=x_input, outputs=latent_space)
+    x = tf.keras.layers.Dense(fno_width, activation="gelu", name="encoder_dense")(x)
+    z = tf.keras.layers.Dense(ndims_latent, activation=None, name="latent_space")(x)
+    return tf.keras.Model(inputs=x_input, outputs=z)
 
 
 def _prepare_samples(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
@@ -346,20 +379,12 @@ def _prepare_fno_samples(config: FnoSummaryStatsConfig, data: np.ndarray) -> np.
             f"got {samples.shape[1]}"
         )
 
-    if config.representation_mode == "fourier_amplitude":
-        if config.num_fft_components is None:
-            raise ValueError("num_fft_components is required for Fourier/FNO summary statistics")
-        samples = _timeseries_to_fft_log_amplitudes(
-            samples,
-            num_fft_components=config.num_fft_components,
-            fft_log_eps=config.fft_log_eps,
+    if config.representation_mode != "time":
+        raise ValueError(
+            "FNO inference expects the encoder input representation to be the "
+            f"raw time series; got representation_mode={config.representation_mode!r}."
         )
-        return samples[:, :, np.newaxis]
-
-    if config.representation_mode == "time":
-        return samples[:, :, np.newaxis]
-
-    raise ValueError(f"Unknown FNO representation_mode: {config.representation_mode}")
+    return samples[:, :, np.newaxis]
 
 
 def _encode(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
@@ -386,13 +411,10 @@ def _load_fno_encoder(config: FnoSummaryStatsConfig):
         len_timeseries=config.len_timeseries,
         ndims_latent=config.ndims_latent,
         representation_mode=config.representation_mode,
-        num_fft_components=config.num_fft_components,
-        fft_log_eps=config.fft_log_eps,
         fno_modes=config.fno_modes,
         fno_width=config.fno_width,
-        fno_depth=config.fno_depth,
-        fno_dense_width=config.fno_dense_width,
-        fno_use_grid=config.fno_use_grid,
+        fno_layers=config.fno_layers,
+        use_time_coordinate=config.use_time_coordinate,
     )
     ckpt = tf.train.Checkpoint(encoder=encoder)
     status = ckpt.restore(_checkpoint_prefix(config.run_dir, config.checkpoint_basename))
@@ -537,10 +559,15 @@ def build_fno_summary_stats(
     len_timeseries = int(hyper_parameters["len_timeseries"])
     ndims_latent = int(hyper_parameters["ndims_latent"])
     representation_mode = str(hyper_parameters.get("representation_mode", "time"))
-    num_fft_components = hyper_parameters.get("num_fft_components")
-    if num_fft_components is not None:
-        num_fft_components = int(num_fft_components)
-    fft_log_eps = float(hyper_parameters.get("fft_log_eps", 1e-8))
+    reconstruction_loss_domain = str(hyper_parameters.get("reconstruction_loss_domain", "time"))
+
+    if representation_mode != "time":
+        raise ValueError(
+            "--summary-stats fno requires a time-domain FNO run "
+            f"(representation_mode='time'); got {representation_mode!r}. "
+            "The Fourier FNO runs still use representation_mode='time'; "
+            "their reconstruction_loss_domain controls only the training loss."
+        )
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(
@@ -554,8 +581,7 @@ def build_fno_summary_stats(
         len_timeseries=len_timeseries,
         ndims_latent=ndims_latent,
         representation_mode=representation_mode,
-        num_fft_components=num_fft_components,
-        fft_log_eps=fft_log_eps,
+        reconstruction_loss_domain=reconstruction_loss_domain,
         fno_modes=_hyper_parameter_int(
             hyper_parameters,
             ("fno_modes", "num_fno_modes", "modes", "n_modes"),
@@ -566,19 +592,14 @@ def build_fno_summary_stats(
             ("fno_width", "width", "hidden_channels", "channels"),
             64,
         ),
-        fno_depth=_hyper_parameter_int(
+        fno_layers=_hyper_parameter_int(
             hyper_parameters,
-            ("fno_depth", "n_fno_layers", "num_fno_layers", "n_layers"),
+            ("fno_layers", "fno_depth", "n_fno_layers", "num_fno_layers", "n_layers"),
             4,
         ),
-        fno_dense_width=_hyper_parameter_int(
+        use_time_coordinate=_hyper_parameter_bool(
             hyper_parameters,
-            ("fno_dense_width", "projection_width", "dense_width"),
-            128,
-        ),
-        fno_use_grid=_hyper_parameter_bool(
-            hyper_parameters,
-            ("fno_use_grid", "use_grid", "append_grid"),
+            ("use_time_coordinate", "fno_use_grid", "use_grid", "append_grid"),
             True,
         ),
     )
