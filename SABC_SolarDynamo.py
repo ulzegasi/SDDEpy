@@ -21,7 +21,7 @@ from enca_summary_stats import (
     build_fno_summary_stats,
     build_mlp_summary_stats,
 )
-from process_fdist import make_process_f_dist
+from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
     build_stats_fn,
@@ -358,7 +358,12 @@ def main() -> None:
     worker_backend = "process" if args.n_workers > 1 else "thread"
 
     if worker_backend == "process":
-        f_dist = make_process_f_dist(
+        make_process_distance = (
+            make_process_sim_then_stats_f_dist
+            if args.summary_stats == "fno"
+            else make_process_f_dist
+        )
+        f_dist = make_process_distance(
             n_samples=Tobs_without_warmup,
             ss_obs=ss_obs,
             simulator=simulator,

@@ -29,7 +29,7 @@ from enca_summary_stats import (
     build_fno_summary_stats,
     build_mlp_summary_stats,
 )
-from process_fdist import make_process_f_dist
+from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
     build_stats_fn,
@@ -359,7 +359,12 @@ def _build_reconstruction_f_dist(
     else:
         raise ValueError(f"Unknown summary-statistics backend: {summary_stats}")
 
-    return make_process_f_dist(
+    make_process_distance = (
+        make_process_sim_then_stats_f_dist
+        if summary_stats == "fno"
+        else make_process_f_dist
+    )
+    return make_process_distance(
         n_samples=t_obs,
         ss_obs=ss_obs,
         simulator=simulator,
