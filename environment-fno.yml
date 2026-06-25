@@ -1,18 +1,21 @@
 name: sddepy_fno_env
 channels:
   - conda-forge
-  - nodefaults
 dependencies:
   # Keep this close to the encainca training environment, because the FNO
   # encoder is TensorFlow/GPU backed.
   - python=3.10
   - numpy
   - scipy
+  - pandas
   - numba
   - tqdm
   - rich
   - matplotlib
+  - plotly
+  - h5py
   - pip
   - pip:
     - juliacall==0.9.31
+    - tensorboard
     - tensorflow>=2.14

@@ -26,6 +26,8 @@ For FNO summary-statistics runs, use a separate environment defined in
 ```bash
 conda env create -f environment-fno.yml
 conda activate sddepy_fno_env
+pip install -e /cfs/earth/scratch/ulzg/SABCpy/SDDE-model
+pip install -e /cfs/earth/scratch/ulzg/SABCpy/SimulatedAnnealingABC
 ```
 
 The environment split is intentional:
@@ -39,6 +41,38 @@ sddepy_fno_env   -> FNO summaries, GPU-capable TensorFlow
 [`load_sddepy_env.sh`](/Users/ulzg/SABC/SDDEpy/load_sddepy_env.sh) selects the
 environment automatically from `SUMMARY_STATS`, so Slurm scripts should set
 `SUMMARY_STATS` before sourcing it.
+
+The FNO inference environment follows the same pattern as the `enca-inca` FNO
+training setup: the conda environment provides Python 3.10 and GPU-capable
+TensorFlow, while the GPU Slurm launcher loads CUDA and redirects Julia and
+matplotlib cache files to scratch.
+
+For a first interactive FNO check on the cluster, export the same scratch paths
+used in [`runjob_fno.sh`](/Users/ulzg/SABC/SDDEpy/runjob_fno.sh) before importing
+`juliacall`:
+
+```bash
+cd /cfs/earth/scratch/ulzg/SABCpy/SDDEpy
+SUMMARY_STATS=fno
+. ./load_sddepy_env.sh
+export JULIA_DEPOT_PATH=/cfs/earth/scratch/ulzg/.julia
+export MPLCONFIGDIR=/cfs/earth/scratch/ulzg/.cache/matplotlib
+mkdir -p "$JULIA_DEPOT_PATH" "$MPLCONFIGDIR"
+python - <<'PY'
+import numpy, scipy, numba, tensorflow
+print("numpy", numpy.__version__)
+print("scipy", scipy.__version__)
+print("numba", numba.__version__)
+print("tensorflow", tensorflow.__version__)
+PY
+python - <<'PY'
+import juliacall
+print("juliacall OK")
+PY
+```
+
+On the login node, TensorFlow may report that no CUDA drivers are available. That
+is expected; check GPU visibility on a GPU node.
 
 Install the shared SDDE model package (-e -> editable means changes in that repo are immediately visible without reinstalling.):
 
