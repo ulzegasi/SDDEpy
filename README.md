@@ -111,7 +111,8 @@ pip install "git+https://github.com/ulzegasi/SimulatedAnnealingABC.git@main"
 
 The ENCA environment pins Python to `3.11` and `juliacall` to `0.9.31`, and uses
 `tensorflow-cpu`. The FNO environment uses Python `3.10` and GPU-capable
-`tensorflow>=2.14`, matching the FNO training environment more closely.
+`tensorflow[and-cuda]>=2.14`, matching the working FNO training setup and
+installing TensorFlow's pip-managed NVIDIA CUDA libraries.
 Standard FFT runs do not need TensorFlow.
 
 On a GPU node, verify the FNO environment before launching a long inference:

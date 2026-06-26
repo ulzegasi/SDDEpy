@@ -17,4 +17,4 @@ dependencies:
   - pip:
     - juliacall==0.9.31
     - tensorboard
-    - tensorflow>=2.14
+    - tensorflow[and-cuda]>=2.14

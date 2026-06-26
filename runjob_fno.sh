@@ -70,7 +70,7 @@ echo "Julia used: $(command -v julia)"
 julia -v
 echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 nvidia-smi || true
-"$PYTHON_BIN" - <<'PY'
+if ! "$PYTHON_BIN" - <<'PY'
 import sys
 import tensorflow as tf
 
@@ -81,6 +81,10 @@ if not gpus:
     print("ERROR: TensorFlow does not see a GPU in sddepy_fno_env.", file=sys.stderr)
     sys.exit(1)
 PY
+then
+  echo "ERROR: Aborting FNO inference because TensorFlow GPU check failed." >&2
+  exit 1
+fi
 echo "JULIA_NUM_THREADS=$JULIA_NUM_THREADS"
 echo "JULIA_DEPOT_PATH=$JULIA_DEPOT_PATH"
 echo "DATASET=$DATASET"
