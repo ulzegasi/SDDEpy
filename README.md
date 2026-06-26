@@ -45,7 +45,9 @@ environment automatically from `SUMMARY_STATS`, so Slurm scripts should set
 The FNO inference environment follows the same pattern as the `enca-inca` FNO
 training setup: the conda environment provides Python 3.10 and GPU-capable
 TensorFlow, while the GPU Slurm launcher loads CUDA and redirects Julia and
-matplotlib cache files to scratch.
+matplotlib cache files to scratch. The inference environment uses
+`matplotlib-base` instead of the full GUI matplotlib package so conda does not
+install Qt/PySide on the cluster.
 
 For a first interactive FNO check on the cluster, export the same scratch paths
 used in [`runjob_fno.sh`](/Users/ulzg/SABC/SDDEpy/runjob_fno.sh) before importing
