@@ -4,11 +4,15 @@ This repository contains the scripts and data needed to run SABC inference using
 
 ## Environment setup
 
-For standard FFT summary-statistics runs, activate the lightweight project
-environment:
+For standard FFT summary-statistics runs, create and activate the lightweight
+project environment defined in
+[`environment.yml`](/Users/ulzg/SABC/SDDEpy/environment.yml):
 
 ```bash
+conda env create -f environment.yml
 conda activate sddepy_env
+pip install -e /cfs/earth/scratch/ulzg/SABCpy/SDDE-model
+pip install -e /cfs/earth/scratch/ulzg/SABCpy/SimulatedAnnealingABC
 ```
 
 For ENCA and MLP encoder summary-statistics runs, use the CPU TensorFlow
@@ -18,6 +22,8 @@ environment defined in
 ```bash
 conda env create -f environment-enca.yml
 conda activate sddepy_enca_env
+pip install -e /cfs/earth/scratch/ulzg/SABCpy/SDDE-model
+pip install -e /cfs/earth/scratch/ulzg/SABCpy/SimulatedAnnealingABC
 ```
 
 For FNO summary-statistics runs, use a separate environment defined in
@@ -76,16 +82,13 @@ PY
 On the login node, TensorFlow may report that no CUDA drivers are available. That
 is expected; check GPU visibility on a GPU node.
 
-Install the shared SDDE model package (-e -> editable means changes in that repo are immediately visible without reinstalling.):
+Each environment needs the shared SDDE model package and SABC package installed
+editable. The `-e` flag means changes in those repos are immediately visible
+without reinstalling. If you are not on the cluster, replace the paths with the
+local paths to those repositories:
 
 ```bash
 pip install -e /path/to/SDDE-model
-```
-
-Also install the SABC package in the same environment if it is not already
-available:
-
-```bash
 pip install -e /path/to/SimulatedAnnealingABC
 ```
 
