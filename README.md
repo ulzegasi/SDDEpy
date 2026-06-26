@@ -92,6 +92,23 @@ pip install -e /path/to/SDDE-model
 pip install -e /path/to/SimulatedAnnealingABC
 ```
 
+For a fresh setup, either clone the package repositories locally and install
+them editable:
+
+```bash
+git clone https://github.com/ulzegasi/SDDE-model.git
+git clone https://github.com/ulzegasi/SimulatedAnnealingABC.git
+pip install -e /path/to/SDDE-model
+pip install -e /path/to/SimulatedAnnealingABC
+```
+
+or install directly from GitHub:
+
+```bash
+pip install "git+https://github.com/ulzegasi/SDDE-model.git@main"
+pip install "git+https://github.com/ulzegasi/SimulatedAnnealingABC.git@main"
+```
+
 The ENCA environment pins Python to `3.11` and `juliacall` to `0.9.31`, and uses
 `tensorflow-cpu`. The FNO environment uses Python `3.10` and GPU-capable
 `tensorflow>=2.14`, matching the FNO training environment more closely.
