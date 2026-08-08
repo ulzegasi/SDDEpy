@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SNsFNOfft5
+#SBATCH --job-name=SNsENCAfftCNN
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -22,10 +22,10 @@
 DATASET="obsSN"          # "obsSN", "C14", or "synthetic"
 SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
-SUMMARY_STATS="fno"      # "fft", "enca", "mlp", or "fno"
+SUMMARY_STATS="enca_fft_cnn"      # "fft", "enca", "mlp", or "enca_fft_cnn"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
-TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_FNO_runs/20260625_fno_z5_m32_fourier"         # required when SUMMARY_STATS is "enca", "mlp", or "fno"
+TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 
 algorithm_label="single"
@@ -33,7 +33,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_fnofft_z5m32"
+RUN_NAME="${DATASET}_${algorithm_label}_enca_fft_cnn"
 
 # ==============================
 # Environment setup
@@ -72,7 +72,7 @@ echo "RUN_NAME=$RUN_NAME"
 echo "SUMMARY_STATS=$SUMMARY_STATS"
 if [[ "$SUMMARY_STATS" == "fft" ]]; then
   echo "FOURIER_RANGE=${FOURIER_RANGE:-default 1:6:120}"
-elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "fno" ]]; then
+elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
   if [[ -z "$TRAIN_RUN_DIR" ]]; then
     echo "ERROR: TRAIN_RUN_DIR must be set when SUMMARY_STATS=$SUMMARY_STATS" >&2
     exit 1
@@ -80,7 +80,7 @@ elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STA
   echo "TRAIN_RUN_DIR=$TRAIN_RUN_DIR"
   echo "ENCA_CHECKPOINT_BASENAME=$ENCA_CHECKPOINT_BASENAME"
 else
-  echo "ERROR: SUMMARY_STATS must be fft, enca, mlp, or fno, got '$SUMMARY_STATS'" >&2
+  echo "ERROR: SUMMARY_STATS must be fft, enca, mlp, or enca_fft_cnn, got '$SUMMARY_STATS'" >&2
   exit 1
 fi
 
@@ -101,7 +101,7 @@ if [[ "$SUMMARY_STATS" == "fft" && -n "$FOURIER_RANGE" ]]; then
   cmd+=(--fourier-range "$FOURIER_RANGE")
 fi
 
-if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "fno" ]]; then
+if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
   cmd+=(--train-run-dir "$TRAIN_RUN_DIR")
   cmd+=(--enca-checkpoint-basename "$ENCA_CHECKPOINT_BASENAME")
 fi

@@ -15,7 +15,7 @@ pip install -e /cfs/earth/scratch/ulzg/SABCpy/SDDE-model
 pip install -e /cfs/earth/scratch/ulzg/SABCpy/SimulatedAnnealingABC
 ```
 
-For ENCA and MLP encoder summary-statistics runs, use the CPU TensorFlow
+For ENCA, MLP, and Fourier-CNN ENCA summary-statistics runs, use the CPU TensorFlow
 environment defined in
 [`environment-enca.yml`](/Users/ulzg/SABC/SDDEpy/environment-enca.yml):
 
@@ -40,7 +40,7 @@ The environment split is intentional:
 
 ```text
 sddepy_env       -> FFT summaries
-sddepy_enca_env  -> ENCA/MLP summaries, CPU TensorFlow
+sddepy_enca_env  -> ENCA/MLP/Fourier-CNN ENCA summaries, CPU TensorFlow
 sddepy_fno_env   -> FNO summaries, GPU-capable TensorFlow
 ```
 
@@ -211,18 +211,20 @@ Supported command-line arguments:
   Name of the saved run to continue from when `--from-previous 1` is used.
 - `--summary-stats`
   Selects the summary-statistics backend. Choices: `fft`, `enca`, `mlp`,
-  `fno`. Default: `fft`.
+  `enca_fft_cnn`, `fno`. Default: `fft`.
 - `--fourier-range`
   Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
   uses the default definition from the shared `sdde_model` package: `1:6:120`,
   which gives 20 summary statistics.
 - `--train-run-dir`
   Training-run directory used when `--summary-stats enca` or
-  `--summary-stats mlp` or `--summary-stats fno`. It must contain
+  `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
+  `--summary-stats fno`. It must contain
   `hyper_parameters.json` and TensorFlow checkpoint files.
 - `--enca-checkpoint-basename`
   Checkpoint family to load when `--summary-stats enca` or
-  `--summary-stats mlp` or `--summary-stats fno`. Default:
+  `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
+  `--summary-stats fno`. Default:
   `model_best_ckpt`.
 
 ### Custom Fourier Summary Statistics
@@ -271,7 +273,7 @@ used whenever `--fourier-range` is not provided.
 ### Neural Encoder Summary Statistics
 
 The driver can also use a trained neural encoder as the summary-statistics
-generator. There are three neural modes:
+generator. There are four neural modes:
 
 - `--summary-stats enca` uses the original Conv1D ENCA encoder. Each simulated
   or observed time series is reshaped from `(Tobs,)` to `(Tobs, 1)` and passed
@@ -281,6 +283,10 @@ generator. There are three neural modes:
   the first `num_fft_components` components, and
   `log(amplitude + fft_log_eps)`, using values saved in the training run's
   `hyper_parameters.json`.
+- `--summary-stats enca_fft_cnn` uses the Fourier-CNN ENCA encoder from
+  `train_ENCAFourierCNN_model3.py`. It applies the training transform exactly:
+  `log1p(abs(rFFT(x)))`, keeps the first `num_fft_components`, and presents the
+  result to the Conv1D encoder with shape `(batch, components, 1)`.
 - `--summary-stats fno` uses a Fourier Neural Operator encoder. The loader reads
   `len_timeseries`, `ndims_latent`, `representation_mode`, and FNO architecture
   values such as `fno_modes`/`modes`, `fno_width`/`width`, and `fno_depth` from
@@ -301,6 +307,13 @@ Use Fourier/MLP ENCA summaries by setting:
 ```bash
 --summary-stats mlp
 --train-run-dir /path/to/sdde_MLP_runs/<run_name>
+```
+
+Use Fourier-CNN ENCA summaries by setting:
+
+```bash
+--summary-stats enca_fft_cnn
+--train-run-dir /path/to/sdde_ENCAFourierCNN_runs/<run_name>
 ```
 
 Use FNO summaries by setting:
@@ -368,8 +381,9 @@ The neural backend checks that the selected dataset length matches the encoder's
 `len_timeseries`. It will fail early if, for example, an encoder trained for
 `len_timeseries = 271` is used with a dataset of a different length.
 
-TensorFlow is required for `--summary-stats enca`, `--summary-stats mlp`, and
-`--summary-stats fno`. Use `sddepy_enca_env` for ENCA/MLP and
+TensorFlow is required for `--summary-stats enca`, `--summary-stats mlp`,
+`--summary-stats enca_fft_cnn`, and `--summary-stats fno`. Use
+`sddepy_enca_env` for ENCA/MLP/Fourier-CNN ENCA and
 `sddepy_fno_env` for FNO if GPU acceleration is desired. Standard FFT runs do
 not import TensorFlow.
 
@@ -379,16 +393,16 @@ exposes the same choice in the editable variables section. Set
 using:
 
 ```bash
-SUMMARY_STATS="enca"     # "fft", "enca", "mlp", or "fno"
+SUMMARY_STATS="enca_fft_cnn"     # "fft", "enca", "mlp", or "enca_fft_cnn"
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
-TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCA_runs/20260504_enca_z10_3"
+TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCAFourierCNN_runs/<run_name>"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 ```
 
 On a different cluster or filesystem, only the path values and environment
 activation commands should need to change; the Python options are the same.
 
-When `SUMMARY_STATS` is `enca`, `mlp`, or `fno`, `FOURIER_RANGE` is ignored and
+When `SUMMARY_STATS` is `enca`, `mlp`, `enca_fft_cnn`, or `fno`, `FOURIER_RANGE` is ignored and
 not passed to the Python driver.
 
 Example of continuing a previous run:
@@ -455,17 +469,19 @@ Supported command-line arguments:
   synthetic runs.
 - `--summary-stats`
   Summary-statistics backend used for reconstructed distances. Choices: `fft`,
-  `enca`, `mlp`, `fno`. This should match the backend used by the original
+  `enca`, `mlp`, `enca_fft_cnn`, `fno`. This should match the backend used by the original
   inference run. Default: `fft`.
 - `--fourier-range`
   Optional 1-based Fourier indices for `--summary-stats fft`, for example
   `1:6:60` or `[1,2,5,9]`.
 - `--train-run-dir`
   Training-run directory required when `--summary-stats enca` or
-  `--summary-stats mlp` or `--summary-stats fno`.
+  `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
+  `--summary-stats fno`.
 - `--enca-checkpoint-basename`
   Checkpoint family to load when `--summary-stats enca`, `--summary-stats mlp`,
-  or `--summary-stats fno`. Default: `model_best_ckpt`.
+  `--summary-stats enca_fft_cnn`, or `--summary-stats fno`. Default:
+  `model_best_ckpt`.
 - `--run-name`
   Optional explicit run name. This can be passed multiple times; if used, the
   script skips the automatic dataset/algorithm expansion.

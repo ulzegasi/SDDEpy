@@ -25,6 +25,7 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde
 
 from enca_summary_stats import (
+    build_enca_fft_cnn_summary_stats,
     build_enca_summary_stats,
     build_fno_summary_stats,
     build_mlp_summary_stats,
@@ -48,7 +49,7 @@ DEFAULT_SYNTHETIC_DATA_FILE = "sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 DEFAULT_DATASETS = ("obsSN", "C14")
 VALID_ALGORITHMS = ("single", "multi")
-VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "fno")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno")
 
 
 class Prior:
@@ -132,12 +133,12 @@ def _parse_args() -> argparse.Namespace:
         "--enca-run-dir",
         dest="train_run_dir",
         default=None,
-        help="Training run directory required for --summary-stats enca/mlp/fno.",
+        help="Training run directory required for a neural summary-statistics backend.",
     )
     parser.add_argument(
         "--enca-checkpoint-basename",
         default="model_best_ckpt",
-        help="Checkpoint basename to load for --summary-stats enca/mlp/fno.",
+        help="Checkpoint basename to load for a neural summary-statistics backend.",
     )
     parser.add_argument(
         "--run-name",
@@ -175,9 +176,9 @@ def _parse_args() -> argparse.Namespace:
         help="Show histogram overlays interactively for each processed run.",
     )
     args = parser.parse_args()
-    if args.summary_stats in ("enca", "mlp", "fno") and args.train_run_dir is None:
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno") and args.train_run_dir is None:
         parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
-    if args.summary_stats in ("enca", "mlp", "fno") and args.fourier_range is not None:
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno") and args.fourier_range is not None:
         parser.error("--fourier-range can only be used with --summary-stats fft")
     return args
 
@@ -348,6 +349,14 @@ def _build_reconstruction_f_dist(
         )
         stats_fn = mlp_stats.batch
         ss_obs = mlp_stats.observed(obs_data)
+    elif summary_stats == "enca_fft_cnn":
+        enca_fft_cnn_stats = build_enca_fft_cnn_summary_stats(
+            run_dir=train_run_dir,
+            checkpoint_basename=enca_checkpoint_basename,
+            expected_tobs=t_obs,
+        )
+        stats_fn = enca_fft_cnn_stats.batch
+        ss_obs = enca_fft_cnn_stats.observed(obs_data)
     elif summary_stats == "fno":
         fno_stats = build_fno_summary_stats(
             run_dir=train_run_dir,

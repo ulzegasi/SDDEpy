@@ -17,6 +17,7 @@ import time
 import numpy as np
 
 from enca_summary_stats import (
+    build_enca_fft_cnn_summary_stats,
     build_enca_summary_stats,
     build_fno_summary_stats,
     build_mlp_summary_stats,
@@ -53,7 +54,7 @@ LOCAL_OUT_DIR = PROJECT_DIR / "output"
 SYNTHETIC_DATA_DIR = LOCAL_DATA_DIR / "synthetic_data"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
-VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "fno")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -80,6 +81,7 @@ def _parse_args() -> argparse.Namespace:
             "Summary-statistics backend. 'fft' keeps the current Fourier summaries; "
             "'enca' uses the original time-series ENCA encoder; "
             "'mlp' uses a Fourier/MLP ENCA encoder; "
+            "'enca_fft_cnn' uses the Fourier-CNN ENCA encoder; "
             "'fno' uses a Fourier Neural Operator encoder."
         ),
     )
@@ -97,13 +99,13 @@ def _parse_args() -> argparse.Namespace:
         "--enca-run-dir",
         dest="train_run_dir",
         default=None,
-        help="Training run directory containing hyper_parameters.json and checkpoints for --summary-stats enca/mlp/fno.",
+        help="Training run directory containing hyper_parameters.json and checkpoints for a neural summary-statistics backend.",
     )
     parser.add_argument(
         "--enca-checkpoint-basename",
         default="model_best_ckpt",
         help=(
-            "Checkpoint basename to load for --summary-stats enca/mlp/fno. "
+            "Checkpoint basename to load for a neural summary-statistics backend. "
             "Defaults to model_best_ckpt."
         ),
     )
@@ -113,7 +115,7 @@ def _parse_args() -> argparse.Namespace:
             parser.error("Missing data file, specify --synthetic-data-file")
         if Path(args.synthetic_data_file).name != args.synthetic_data_file:
             parser.error("--synthetic-data-file must be a file name, not a path")
-    if args.summary_stats in ("enca", "mlp", "fno"):
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno"):
         if args.train_run_dir is None:
             parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
         if args.fourier_range is not None:
@@ -338,6 +340,17 @@ def main() -> None:
         stats_fn = mlp_stats.batch
         ss_obs = mlp_stats.observed(SNdata)
         summary_stats_label = "mlp"
+        summary_stats_detail = f"{args.train_run_dir} ({args.enca_checkpoint_basename})"
+    elif args.summary_stats == "enca_fft_cnn":
+        enca_fft_cnn_stats = build_enca_fft_cnn_summary_stats(
+            run_dir=args.train_run_dir,
+            checkpoint_basename=args.enca_checkpoint_basename,
+            expected_tobs=Tobs_without_warmup,
+        )
+        fourier_range = None
+        stats_fn = enca_fft_cnn_stats.batch
+        ss_obs = enca_fft_cnn_stats.observed(SNdata)
+        summary_stats_label = "enca_fft_cnn"
         summary_stats_detail = f"{args.train_run_dir} ({args.enca_checkpoint_basename})"
     elif args.summary_stats == "fno":
         fno_stats = build_fno_summary_stats(

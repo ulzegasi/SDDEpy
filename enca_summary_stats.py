@@ -92,7 +92,7 @@ def _import_tensorflow():
         import tensorflow as tf
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "TensorFlow is required for --summary-stats enca. Install TensorFlow "
+            "TensorFlow is required for neural summary statistics. Install TensorFlow "
             "in the environment used to run SABC, or use --summary-stats fft."
         ) from exc
 
@@ -133,6 +133,39 @@ def _build_encoder(
     representation_mode: str,
     num_fft_components: int | None,
 ):
+    if representation_mode == "enca_fft_cnn":
+        if num_fft_components is None:
+            raise ValueError("num_fft_components is required for Fourier-CNN ENCA")
+
+        x_input = tf.keras.layers.Input(
+            shape=[num_fft_components, 1],
+            name="fourier_log_amplitude",
+        )
+        x = tf.keras.layers.Conv1D(
+            16, 3, padding="same", activation="relu", name="enc_conv_1"
+        )(x_input)
+        x = tf.keras.layers.Conv1D(
+            16, 3, padding="same", activation="relu", name="enc_conv_2"
+        )(x)
+        x = tf.keras.layers.MaxPool1D(pool_size=2, name="enc_maxpool")(x)
+        x = tf.keras.layers.Conv1D(
+            32, 3, padding="same", activation="relu", name="enc_conv_3"
+        )(x)
+        x = tf.keras.layers.Conv1D(
+            32, 3, padding="same", activation="relu", name="enc_conv_4"
+        )(x)
+        x = tf.keras.layers.Conv1D(
+            ndims_latent,
+            3,
+            padding="same",
+            activation=None,
+            name="latent_channels",
+        )(x)
+        latent_space = tf.keras.layers.GlobalAveragePooling1D(
+            name="global_avg_pool"
+        )(x)
+        return tf.keras.Model(inputs=x_input, outputs=latent_space)
+
     if representation_mode == "fourier_amplitude":
         if num_fft_components is None:
             raise ValueError("num_fft_components is required for MLP/Fourier ENCA")
@@ -200,6 +233,22 @@ def _timeseries_to_fft_log_amplitudes(
     window = np.hanning(n_time).astype(np.float32)
     amplitudes = np.abs(np.fft.fft(samples * window[None, :], axis=1)) / float(n_time)
     return np.log(amplitudes[:, :num_fft_components] + fft_log_eps).astype(np.float32)
+
+
+def _timeseries_to_rfft_log1p_amplitudes(
+    samples: np.ndarray,
+    *,
+    num_fft_components: int,
+) -> np.ndarray:
+    """Match ENCAFourierCNN training preprocessing exactly."""
+    max_components = samples.shape[1] // 2 + 1
+    if num_fft_components > max_components:
+        raise ValueError(
+            f"num_fft_components={num_fft_components} exceeds the rFFT size "
+            f"{max_components} for time-series length {samples.shape[1]}"
+        )
+    amplitudes = np.abs(np.fft.rfft(samples, axis=1))[:, :num_fft_components]
+    return np.log1p(amplitudes).astype(np.float32)[:, :, np.newaxis]
 
 
 def _make_spectral_conv1d_layer(tf):
@@ -360,6 +409,14 @@ def _prepare_samples(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.nda
             samples,
             num_fft_components=config.num_fft_components,
             fft_log_eps=config.fft_log_eps,
+        )
+
+    if config.representation_mode == "enca_fft_cnn":
+        if config.num_fft_components is None:
+            raise ValueError("num_fft_components is required for Fourier-CNN ENCA")
+        return _timeseries_to_rfft_log1p_amplitudes(
+            samples,
+            num_fft_components=config.num_fft_components,
         )
 
     if config.representation_mode == "time":
@@ -552,6 +609,49 @@ def build_mlp_summary_stats(
             f"got {stats.config.representation_mode!r}"
         )
     return stats
+
+
+def build_enca_fft_cnn_summary_stats(
+    *,
+    run_dir: str | Path,
+    checkpoint_basename: str = "model_best_ckpt",
+    expected_tobs: int | None = None,
+) -> EncaSummaryStats:
+    """Build the Fourier-CNN ENCA encoder used by solar_dynamo training."""
+    run_dir = Path(run_dir).expanduser().resolve()
+    if not run_dir.exists():
+        raise FileNotFoundError(f"Fourier-CNN ENCA run directory not found: {run_dir}")
+    if not run_dir.is_dir():
+        raise NotADirectoryError(f"Fourier-CNN ENCA run path is not a directory: {run_dir}")
+
+    hyper_parameters = _load_hyper_parameters(run_dir)
+    len_timeseries = int(hyper_parameters["len_timeseries"])
+    ndims_latent = int(hyper_parameters["ndims_latent"])
+    num_fft_components = int(hyper_parameters["num_fft_components"])
+
+    if expected_tobs is not None and len_timeseries != int(expected_tobs):
+        raise ValueError(
+            f"Fourier-CNN ENCA encoder was trained for len_timeseries={len_timeseries}, "
+            f"but the selected dataset has Tobs={expected_tobs}."
+        )
+
+    max_components = len_timeseries // 2 + 1
+    if num_fft_components > max_components:
+        raise ValueError(
+            f"num_fft_components={num_fft_components} exceeds the rFFT size "
+            f"{max_components} for len_timeseries={len_timeseries}."
+        )
+
+    config = EncaSummaryStatsConfig(
+        run_dir=run_dir,
+        checkpoint_basename=checkpoint_basename,
+        len_timeseries=len_timeseries,
+        ndims_latent=ndims_latent,
+        representation_mode="enca_fft_cnn",
+        num_fft_components=num_fft_components,
+    )
+    _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
+    return EncaSummaryStats(config)
 
 
 def build_fno_summary_stats(
