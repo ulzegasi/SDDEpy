@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SNsFNOgpu6
+#SBATCH --job-name=SNsFNO6m64fftSlow
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -9,8 +9,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:1
-#SBATCH --time=02-00:00:00
-#SBATCH --partition=earth-5
+#SBATCH --time=04-00:00:00
+#SBATCH --partition=earth-4
 #SBATCH --no-requeue
 #SBATCH --constraint=rhel8
 #SBATCH --mail-type=fail,end
@@ -26,7 +26,7 @@ ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 SUMMARY_STATS="fno"
 FOURIER_RANGE=""
-TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_FNO_runs/20260622_fno_z6_m32_fourier"
+TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_FNO_runs/20260806_fno_z6_m64_fourier_slow"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 
 algorithm_label="single"
@@ -34,7 +34,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_fnofft_z6m32"
+RUN_NAME="${DATASET}_${algorithm_label}_fnofft_z6m64slow"
 
 # ==============================
 # Environment setup

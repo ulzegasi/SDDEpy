@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SNsFNOfft6
+#SBATCH --job-name=SNsFNOfft5
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -22,10 +22,10 @@
 DATASET="obsSN"          # "obsSN", "C14", or "synthetic"
 SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
-N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 SUMMARY_STATS="fno"      # "fft", "enca", "mlp", or "fno"
+N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
-TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_FNO_runs/20260622_fno_z6_m32_fourier"         # required when SUMMARY_STATS is "enca", "mlp", or "fno"
+TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_FNO_runs/20260625_fno_z5_m32_fourier"         # required when SUMMARY_STATS is "enca", "mlp", or "fno"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 
 algorithm_label="single"
@@ -33,7 +33,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_fnofft_z6m32"
+RUN_NAME="${DATASET}_${algorithm_label}_fnofft_z5m32"
 
 # ==============================
 # Environment setup
