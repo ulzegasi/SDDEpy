@@ -403,9 +403,9 @@ using:
 
 ```bash
 SUMMARY_STATS="enca_fft_cnn"     # "fft", "enca", "mlp", or "enca_fft_cnn"
-SIMULATOR_SEED=123       # forward-model simulations
-ALGORITHM_SEED=18        # SABC algorithm randomness
-PROPOSAL_SEED=22         # Differential Evolution proposals
+SIMULATOR_SEED="123"     # forward-model simulations; set "" for fresh randomness
+ALGORITHM_SEED="18"      # SABC algorithm randomness; set "" for fresh randomness
+PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh randomness
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
 TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCAFourierCNN_runs/<run_name>"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
@@ -433,7 +433,10 @@ python3 SABC_SolarDynamo.py \
 ```
 
 The driver prints all three seed values at startup. `runjob.sh` also records
-them in the Slurm log before launching the inference.
+them in the Slurm log before launching the inference. When a seed variable in
+`runjob.sh` is empty, the script logs it as `random` and omits the corresponding
+command-line option, so that RNG uses fresh randomness. Seeded and unseeded RNG
+streams can be selected independently.
 
 Example of continuing a previous run:
 
