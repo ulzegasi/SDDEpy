@@ -9,9 +9,18 @@ import io
 
 import numpy as np
 
-from sdde_model import hann_window, init_julia, sn_batch, summary_statistics, summary_statistics_batch
+from sdde_model import (
+    hann_window,
+    init_julia,
+    sn_batch as sn_batch_original,
+    summary_statistics,
+    summary_statistics_batch,
+)
+from sdde_model.solar_dynamo_jupiter import sn_batch as sn_batch_jupiter
 
 DatasetName = str
+ModelName = str
+VALID_MODELS = ("original", "jupiter")
 
 
 def load_observed_sn(datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
@@ -100,17 +109,26 @@ def simulator_batch(
     *,
     Twarmup: int,
     Tobs: int,
+    model: ModelName,
 ) -> None:
     """Simulate yearly sunspot traces for a batch of parameters."""
     theta = np.asarray(theta, dtype=float)
     seeds = rng.integers(0, np.iinfo(np.int32).max, size=theta.shape[0], dtype=np.int64)
+    if model == "original":
+        sn_batch = sn_batch_original
+    elif model == "jupiter":
+        sn_batch = sn_batch_jupiter
+    else:
+        raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
     y_sim = sn_batch(theta, Twarmup=Twarmup, Tobs=Tobs, seeds=seeds)
     y[:, :] = np.asarray(y_sim, dtype=np.float64)
 
 
-def build_simulator(*, Twarmup: int, Tobs: int):
+def build_simulator(*, Twarmup: int, Tobs: int, model: ModelName = "original"):
     """Create a picklable simulator with fixed warmup and observation length."""
-    return partial(simulator_batch, Twarmup=Twarmup, Tobs=Tobs)
+    if model not in VALID_MODELS:
+        raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
+    return partial(simulator_batch, Twarmup=Twarmup, Tobs=Tobs, model=model)
 
 
 def stats_fn_batch(y: np.ndarray, ss_out: np.ndarray) -> None:

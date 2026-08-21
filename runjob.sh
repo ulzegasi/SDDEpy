@@ -20,6 +20,7 @@
 # Editable variables
 # ==============================
 DATASET="obsSN"          # "obsSN", "C14", or "synthetic"
+MODEL="original"         # "original" or "jupiter"
 SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 SUMMARY_STATS="enca_fft_cnn"      # "fft", "enca", "mlp", or "enca_fft_cnn"
@@ -36,7 +37,12 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_enca_fft_cnn"
+model_label=""
+if [[ "$MODEL" == "jupiter" ]]; then
+  model_label="_jupiter"
+fi
+
+RUN_NAME="${DATASET}_${algorithm_label}${model_label}_enca_fft_cnn"
 
 # ==============================
 # Environment setup
@@ -70,6 +76,7 @@ if [[ "$DATASET" == "synthetic" ]]; then
   echo "SYNTHETIC_DATA_FILE=$SYNTHETIC_DATA_FILE"
 fi
 echo "ALGORITHM=$ALGORITHM"
+echo "MODEL=$MODEL"
 echo "N_WORKERS=$N_WORKERS"
 echo "SIMULATOR_SEED=${SIMULATOR_SEED:-random}"
 echo "ALGORITHM_SEED=${ALGORITHM_SEED:-random}"
@@ -98,6 +105,7 @@ cmd=(
   --dataset "$DATASET"
   --synthetic-data-file "$SYNTHETIC_DATA_FILE"
   --algorithm "$ALGORITHM"
+  --model "$MODEL"
   --n-workers "$N_WORKERS"
   --run-name "$RUN_NAME"
   --summary-stats "$SUMMARY_STATS"

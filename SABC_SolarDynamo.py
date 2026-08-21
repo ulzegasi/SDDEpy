@@ -25,6 +25,7 @@ from enca_summary_stats import (
 from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
+    VALID_MODELS,
     build_stats_fn,
     build_simulator,
     init_julia_quiet,
@@ -43,6 +44,7 @@ N_WORKERS = 4
 # ##### Problem selection #####
 DATASET = "obsSN"  # "obsSN", "C14", or "synthetic"
 ALGORITHM = "single_eps"  # "single_eps" or "multi_eps"
+MODEL = "original"  # "original" or "jupiter"
 
 # ##### Output naming #####
 RUN_NAME = None
@@ -60,6 +62,12 @@ VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno")
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=VALID_DATASETS, default=DATASET)
+    parser.add_argument(
+        "--model",
+        choices=VALID_MODELS,
+        default=MODEL,
+        help="Forward model used by the inference. Default: original.",
+    )
     parser.add_argument(
         "--synthetic-data-file",
         default=None,
@@ -193,13 +201,24 @@ def _parse_fourier_range(value: str | None) -> tuple[int, ...] | None:
     return fourier_range
 
 
-def _default_run_name(dataset: str, algorithm: str, summary_stats: str) -> str:
-    suffix = "" if summary_stats == "fft" else f"_{summary_stats}"
-    return f"{dataset}_{algorithm}{suffix}"
+def _default_run_name(
+    dataset: str,
+    algorithm: str,
+    summary_stats: str,
+    model: str = "original",
+) -> str:
+    model_suffix = "" if model == "original" else "_jupiter"
+    stats_suffix = "" if summary_stats == "fft" else f"_{summary_stats}"
+    return f"{dataset}_{algorithm}{model_suffix}{stats_suffix}"
 
 
 def _resolve_run_names(args: argparse.Namespace) -> tuple[str, str | None]:
-    run_name = args.run_name or _default_run_name(args.dataset, args.algorithm, args.summary_stats)
+    run_name = args.run_name or _default_run_name(
+        args.dataset,
+        args.algorithm,
+        args.summary_stats,
+        args.model,
+    )
     previous_run_name = args.previous_run_name
     if args.from_previous == 1 and not previous_run_name:
         raise ValueError(
@@ -253,11 +272,11 @@ def _import_sabc_package():
 
 class Prior:
     """
-    Independent uniform prior on (tau, T, Nd, sigma, Bmax).
+    Independent uniform prior over a model parameter vector.
 
     Batch API:
-      - ``rvs(rng, size=n_particles)`` -> ``(n_particles, 5)``
-      - ``logpdf(theta_batch)`` -> ``(n_particles,)`` where ``theta_batch`` is ``(n_particles, 5)``
+      - ``rvs(rng, size=n_particles)`` -> ``(n_particles, n_parameters)``
+      - ``logpdf(theta_batch)`` -> ``(n_particles,)``
     """
 
     def __init__(self, lower: np.ndarray, upper: np.ndarray):
@@ -278,6 +297,22 @@ class Prior:
         lp = np.full(theta.shape[0], -np.inf, dtype=float)
         lp[in_bounds] = -self._log_volume
         return lp
+
+
+def _prior_bounds(model: str) -> tuple[np.ndarray, np.ndarray]:
+    """Return the configured 5D original or 7D Jupiter prior bounds."""
+    # Shared parameters: tau, T, Nd, sigma, Bmax.
+    lower = [0.1, 0.1, 1.0, 0.005, 1.0]
+    upper = [10.0, 10.0, 15.0, 0.05, 15.0]
+
+    if model == "jupiter":
+        # Additional parameters: epsilon, phase (radians).
+        lower.extend([0.0, 0.0])
+        upper.extend([0.6, 2.0 * np.pi])
+    elif model != "original":
+        raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
+
+    return np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
 
 
 def _resolve_paths() -> tuple[Path, Path]:
@@ -336,7 +371,11 @@ def main() -> None:
 
     # Problem-specific simulator/statistics functions live in an import-safe helper
     # module so they can be used safely from multiprocessing "spawn" workers.
-    simulator = build_simulator(Twarmup=200, Tobs=Tobs_without_warmup)
+    simulator = build_simulator(
+        Twarmup=200,
+        Tobs=Tobs_without_warmup,
+        model=args.model,
+    )
 
     if args.summary_stats == "fft":
         fourier_range = _parse_fourier_range(args.fourier_range)
@@ -430,16 +469,9 @@ def main() -> None:
             use_numba=False,
         )
 
-    # Prior ranges (yearly resolution).
-    # Ulzega et al., ApJ 992, 2025:
-    # lower = np.array([0.1, 0.1, 1.0, 0.01, 1.0], dtype=float)
-    # upper = np.array([10.0, 10.0, 15.0, 0.3, 15.0], dtype=float)
-    # Try something new:
-    # lower = np.array([4.0, 4.0, 9.5, 0.005, 4.0], dtype=float)
-    # upper = np.array([10.0, 10.0, 15.0, 0.05, 15.0], dtype=float)
-    # Ulzega et al., ApJ 992, 2025, with little less noise:
-    lower = np.array([0.1, 0.1, 1.0, 0.005, 1.0], dtype=float)
-    upper = np.array([10.0, 10.0, 15.0, 0.05, 15.0], dtype=float)
+    # Prior ranges (yearly resolution). The Jupiter model appends
+    # epsilon and phase to the five original dynamo parameters.
+    lower, upper = _prior_bounds(args.model)
 
     prior = Prior(lower=lower, upper=upper)
 
@@ -472,6 +504,18 @@ def main() -> None:
             raise FileNotFoundError(f"Previous result not found: {prev_path}")
 
         out_prev = load_sabc_result(prev_path)
+        previous_population = np.asarray(out_prev.population)
+        if previous_population.ndim != 2 or previous_population.shape[1] != lower.size:
+            previous_n_parameters = (
+                previous_population.shape[1]
+                if previous_population.ndim == 2
+                else "unknown"
+            )
+            raise ValueError(
+                f"Cannot resume {previous_run_name!r} with model={args.model!r}: "
+                f"the saved population has {previous_n_parameters} parameters, "
+                f"but this model requires {lower.size}."
+            )
         sabc_wallclock_start = time.perf_counter()
         out = update_population(out_prev, n_simulation=n_simulation)
 
@@ -494,6 +538,7 @@ def main() -> None:
     if args.dataset == "synthetic":
         print(f"Synthetic data path: {synthetic_data_path}")
     print(f"Algorithm used: {args.algorithm}")
+    print(f"Forward model used: {args.model}")
     print(f"Summary stats backend: {summary_stats_label}")
     print(f"Summary stats detail: {summary_stats_detail}")
     print(f"Observed years used: {SNyrs[0]} - {SNyrs[-1]} (n={Tobs_without_warmup})")

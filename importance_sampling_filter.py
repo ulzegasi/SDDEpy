@@ -282,6 +282,19 @@ def _load_population(run_name: str) -> np.ndarray:
     return population
 
 
+def _model_from_population(population: np.ndarray) -> str:
+    """Infer the forward model from the saved parameter dimension."""
+    n_parameters = population.shape[1]
+    if n_parameters == 5:
+        return "original"
+    if n_parameters == 7:
+        return "jupiter"
+    raise ValueError(
+        f"Cannot infer a forward model from a population with {n_parameters} parameters; "
+        "expected 5 (original) or 7 (jupiter)."
+    )
+
+
 def _recover_sabc_rho(run_name: str, n_particles: int) -> np.ndarray:
     load_sabc_result = _import_sabc_io()
     pkl_path = OUTPUT_DIR / f"SABCresult_{run_name}.pkl"
@@ -313,6 +326,7 @@ def _recover_sabc_rho(run_name: str, n_particles: int) -> np.ndarray:
 
 def _build_reconstruction_f_dist(
     dataset: str,
+    model: str,
     n_workers: int,
     seed: int,
     synthetic_data_path: Path | None,
@@ -322,7 +336,7 @@ def _build_reconstruction_f_dist(
     enca_checkpoint_basename: str,
 ):
     _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
-    simulator = build_simulator(Twarmup=200, Tobs=t_obs)
+    simulator = build_simulator(Twarmup=200, Tobs=t_obs, model=model)
 
     if summary_stats == "fft":
         stats_fn = build_stats_fn(fourier_range=fourier_range)
@@ -391,6 +405,7 @@ def _reconstruct_rho(
     *,
     run_name: str,
     dataset: str,
+    model: str,
     synthetic_data_path: Path | None,
     summary_stats: str,
     fourier_range: tuple[int, ...] | None,
@@ -405,6 +420,7 @@ def _reconstruct_rho(
 
     f_dist = _build_reconstruction_f_dist(
         dataset,
+        model=model,
         n_workers=n_workers,
         seed=seed,
         synthetic_data_path=synthetic_data_path,
@@ -585,15 +601,17 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
 
     population = _load_population(run_name)
     n_particles = population.shape[0]
+    model = _model_from_population(population)
 
     print(
-        f"[{run_name}] reconstructing with summary_stats={args.summary_stats}",
+        f"[{run_name}] reconstructing with model={model}, summary_stats={args.summary_stats}",
         flush=True,
     )
     reconstructed_rho = _reconstruct_rho(
         population,
         run_name=run_name,
         dataset=dataset,
+        model=model,
         synthetic_data_path=synthetic_data_path,
         summary_stats=args.summary_stats,
         fourier_range=fourier_range,

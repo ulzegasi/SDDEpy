@@ -182,6 +182,7 @@ python3 SABC_SolarDynamo.py --dataset obsSN --algorithm single_eps
 python3 SABC_SolarDynamo.py --dataset obsSN --algorithm multi_eps
 python3 SABC_SolarDynamo.py --dataset C14 --algorithm single_eps
 python3 SABC_SolarDynamo.py --dataset C14 --algorithm multi_eps
+python3 SABC_SolarDynamo.py --dataset obsSN --algorithm single_eps --model jupiter
 python3 SABC_SolarDynamo.py \
   --dataset synthetic \
   --synthetic-data-file sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv \
@@ -192,6 +193,11 @@ Supported command-line arguments:
 
 - `--dataset`
   Selects the dataset. Choices: `obsSN`, `C14`, `synthetic`.
+- `--model`
+  Selects the forward model. Choices: `original`, `jupiter`. The default is
+  `original`. The original model uses the five parameters
+  `(tau, T, Nd, sigma, Bmax)`. The Jupiter model adds `(epsilon, phase)` and
+  modulates `Nd` at the fixed 11.86-year Jupiter period.
 - `--synthetic-data-file`
   CSV filename required when `--dataset synthetic`. The file is loaded from
   `data/synthetic_data/` and should have a header row and two columns:
@@ -215,7 +221,8 @@ Supported command-line arguments:
   randomness when it is omitted.
 - `--run-name`
   Optional custom output name. If omitted, the default is
-  `<dataset>_<algorithm>`.
+  `<dataset>_<algorithm>` for the original model and
+  `<dataset>_<algorithm>_jupiter` for the Jupiter model.
 - `--previous-run-name`
   Name of the saved run to continue from when `--from-previous 1` is used.
 - `--summary-stats`
@@ -409,6 +416,7 @@ PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh ra
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
 TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCAFourierCNN_runs/<run_name>"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
+MODEL="original"               # "original" or "jupiter"
 ```
 
 On a different cluster or filesystem, only the path values and environment
@@ -471,6 +479,10 @@ The script writes only two files per processed run to
 
 - `kept_ind_reconst_<run_name>.csv`
 - `kept_ind_sabc_<run_name>.csv`
+
+When reconstructing distances, the filter selects the original model for a
+five-column posterior population and the Jupiter model for a seven-column
+population.
 
 Examples:
 
