@@ -71,6 +71,33 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--algorithm", choices=VALID_ALGORITHMS, default=ALGORITHM)
     parser.add_argument("--from-previous", type=int, choices=(0, 1), default=FROM_PREVIOUS)
     parser.add_argument("--n-workers", type=int, default=N_WORKERS)
+    parser.add_argument(
+        "--simulator-seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the forward-model simulations. If omitted, the simulator "
+            "uses fresh randomness."
+        ),
+    )
+    parser.add_argument(
+        "--algorithm-seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for SABC prior sampling, resampling, and acceptance decisions. "
+            "If omitted, the algorithm uses fresh randomness."
+        ),
+    )
+    parser.add_argument(
+        "--proposal-seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the Differential Evolution proposal. If omitted, the "
+            "proposal uses fresh randomness."
+        ),
+    )
     parser.add_argument("--run-name", default=RUN_NAME)
     parser.add_argument("--previous-run-name", default=PREVIOUS_RUN_NAME)
     parser.add_argument(
@@ -283,6 +310,10 @@ def main() -> None:
 
     run_name, previous_run_name = _resolve_run_names(args)
 
+    print(f"Simulator seed: {args.simulator_seed}")
+    print(f"Algorithm seed: {args.algorithm_seed}")
+    print(f"Proposal seed: {args.proposal_seed}", flush=True)
+
     init_julia()  # Julia must be initialized early in the parent process.
 
     (
@@ -381,8 +412,7 @@ def main() -> None:
             ss_obs=ss_obs,
             simulator=simulator,
             stats_fn=stats_fn,
-            # seed=123,
-            seed=None,
+            seed=args.simulator_seed,
             distance="abs",
             n_workers=args.n_workers,
             worker_setup=init_julia_quiet,
@@ -394,8 +424,7 @@ def main() -> None:
             ss_obs=ss_obs,
             simulator=simulator,
             stats_fn=stats_fn,
-            # seed=123,
-            seed=None,
+            seed=args.simulator_seed,
             distance="abs",
             n_workers=args.n_workers,
             use_numba=False,
@@ -418,11 +447,8 @@ def main() -> None:
     n_particles = 1_000
     n_simulation = 1_000_000_000
 
-    # rng_alg = np.random.default_rng(18)
-    # rng_prop = np.random.default_rng(22)
-    
-    rng_alg = np.random.default_rng()
-    rng_prop = np.random.default_rng()
+    rng_alg = np.random.default_rng(args.algorithm_seed)
+    rng_prop = np.random.default_rng(args.proposal_seed)
 
     proposal = DifferentialEvolution(n_para=lower.size, rng=rng_prop)
     config = SABCConfig(

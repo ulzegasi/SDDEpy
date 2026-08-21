@@ -24,6 +24,9 @@ SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
 SUMMARY_STATS="enca_fft_cnn"      # "fft", "enca", "mlp", or "enca_fft_cnn"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
+SIMULATOR_SEED=123       # forward-model simulations
+ALGORITHM_SEED=18        # prior sampling, resampling, and acceptance decisions
+PROPOSAL_SEED=22         # Differential Evolution proposals
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
 TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
@@ -68,6 +71,9 @@ if [[ "$DATASET" == "synthetic" ]]; then
 fi
 echo "ALGORITHM=$ALGORITHM"
 echo "N_WORKERS=$N_WORKERS"
+echo "SIMULATOR_SEED=$SIMULATOR_SEED"
+echo "ALGORITHM_SEED=$ALGORITHM_SEED"
+echo "PROPOSAL_SEED=$PROPOSAL_SEED"
 echo "RUN_NAME=$RUN_NAME"
 echo "SUMMARY_STATS=$SUMMARY_STATS"
 if [[ "$SUMMARY_STATS" == "fft" ]]; then
@@ -93,6 +99,9 @@ cmd=(
   --synthetic-data-file "$SYNTHETIC_DATA_FILE"
   --algorithm "$ALGORITHM"
   --n-workers "$N_WORKERS"
+  --simulator-seed "$SIMULATOR_SEED"
+  --algorithm-seed "$ALGORITHM_SEED"
+  --proposal-seed "$PROPOSAL_SEED"
   --run-name "$RUN_NAME"
   --summary-stats "$SUMMARY_STATS"
 )

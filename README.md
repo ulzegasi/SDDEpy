@@ -204,6 +204,15 @@ Supported command-line arguments:
 - `--n-workers`
   Number of workers for the distance-function evaluation. Use `1` for the
   serial/thread path or `>1` for the Julia-safe process path.
+- `--simulator-seed`
+  Optional seed for the forward-model simulations. Runs use fresh randomness
+  when it is omitted.
+- `--algorithm-seed`
+  Optional seed for SABC prior sampling, resampling, and acceptance decisions.
+  Runs use fresh randomness when it is omitted.
+- `--proposal-seed`
+  Optional seed for the Differential Evolution proposal. Runs use fresh
+  randomness when it is omitted.
 - `--run-name`
   Optional custom output name. If omitted, the default is
   `<dataset>_<algorithm>`.
@@ -394,6 +403,9 @@ using:
 
 ```bash
 SUMMARY_STATS="enca_fft_cnn"     # "fft", "enca", "mlp", or "enca_fft_cnn"
+SIMULATOR_SEED=123       # forward-model simulations
+ALGORITHM_SEED=18        # SABC algorithm randomness
+PROPOSAL_SEED=22         # Differential Evolution proposals
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
 TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCAFourierCNN_runs/<run_name>"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
@@ -404,6 +416,24 @@ activation commands should need to change; the Python options are the same.
 
 When `SUMMARY_STATS` is `enca`, `mlp`, `enca_fft_cnn`, or `fno`, `FOURIER_RANGE` is ignored and
 not passed to the Python driver.
+
+For a paired comparison, pass the same three seed values, worker count, and all
+other inference settings to both runs. For example:
+
+```bash
+python3 SABC_SolarDynamo.py \
+  --dataset obsSN \
+  --algorithm multi_eps \
+  --summary-stats fft \
+  --n-workers 32 \
+  --simulator-seed 123 \
+  --algorithm-seed 18 \
+  --proposal-seed 22 \
+  --run-name obsSN_multi_fft_seeded
+```
+
+The driver prints all three seed values at startup. `runjob.sh` also records
+them in the Slurm log before launching the inference.
 
 Example of continuing a previous run:
 
