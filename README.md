@@ -196,8 +196,10 @@ Supported command-line arguments:
 - `--model`
   Selects the forward model. Choices: `original`, `jupiter`. The default is
   `original`. The original model uses the five parameters
-  `(tau, T, Nd, sigma, Bmax)`. The Jupiter model adds `(epsilon, phase)` and
-  modulates `Nd` at the fixed 11.86-year Jupiter period.
+  `(tau, T, Nd, sigma, Bmax)`. The Jupiter inference adds `epsilon` and
+  modulates `Nd` at the fixed 11.86-year Jupiter period. For every simulated
+  realization, its nuisance phase is independently sampled from
+  `Uniform(0, 2*pi)` and passed to the unchanged seven-parameter simulator.
 - `--synthetic-data-file`
   CSV filename required when `--dataset synthetic`. The file is loaded from
   `data/synthetic_data/` and should have a header row and two columns:
@@ -481,8 +483,9 @@ The script writes only two files per processed run to
 - `kept_ind_sabc_<run_name>.csv`
 
 When reconstructing distances, the filter selects the original model for a
-five-column posterior population and the Jupiter model for a seven-column
-population.
+five-column posterior population and the Jupiter model for a six-column
+population. The Jupiter phase is sampled afresh for each reconstructed
+realization, just as it is during inference.
 
 Examples:
 

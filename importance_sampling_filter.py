@@ -287,11 +287,11 @@ def _model_from_population(population: np.ndarray) -> str:
     n_parameters = population.shape[1]
     if n_parameters == 5:
         return "original"
-    if n_parameters == 7:
+    if n_parameters == 6:
         return "jupiter"
     raise ValueError(
         f"Cannot infer a forward model from a population with {n_parameters} parameters; "
-        "expected 5 (original) or 7 (jupiter)."
+        "expected 5 (original) or 6 (jupiter)."
     )
 
 

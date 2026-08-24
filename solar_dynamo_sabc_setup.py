@@ -111,16 +111,35 @@ def simulator_batch(
     Tobs: int,
     model: ModelName,
 ) -> None:
-    """Simulate yearly sunspot traces for a batch of parameters."""
+    """Simulate yearly sunspot traces for a batch of inference parameters.
+
+    The Jupiter inference has six parameters. Its phase is a nuisance variable:
+    draw one independent phase per simulated realization and append it before
+    calling the unchanged seven-parameter SDDE-model simulator.
+    """
     theta = np.asarray(theta, dtype=float)
+    if theta.ndim != 2:
+        raise ValueError(f"theta must be a 2D array, got shape {theta.shape}")
+
+    expected_n_parameters = 5 if model == "original" else 6
+    if model not in VALID_MODELS:
+        raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
+    if theta.shape[1] != expected_n_parameters:
+        raise ValueError(
+            f"model={model!r} expects {expected_n_parameters} inference parameters, "
+            f"got {theta.shape[1]}"
+        )
+
     seeds = rng.integers(0, np.iinfo(np.int32).max, size=theta.shape[0], dtype=np.int64)
     if model == "original":
         sn_batch = sn_batch_original
-    elif model == "jupiter":
-        sn_batch = sn_batch_jupiter
+        theta_simulator = theta
     else:
-        raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
-    y_sim = sn_batch(theta, Twarmup=Twarmup, Tobs=Tobs, seeds=seeds)
+        sn_batch = sn_batch_jupiter
+        phases = rng.uniform(0.0, 2.0 * np.pi, size=(theta.shape[0], 1))
+        theta_simulator = np.concatenate((theta, phases), axis=1)
+
+    y_sim = sn_batch(theta_simulator, Twarmup=Twarmup, Tobs=Tobs, seeds=seeds)
     y[:, :] = np.asarray(y_sim, dtype=np.float64)
 
 

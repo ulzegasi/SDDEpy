@@ -300,15 +300,15 @@ class Prior:
 
 
 def _prior_bounds(model: str) -> tuple[np.ndarray, np.ndarray]:
-    """Return the configured 5D original or 7D Jupiter prior bounds."""
+    """Return the configured 5D original or 6D Jupiter prior bounds."""
     # Shared parameters: tau, T, Nd, sigma, Bmax.
     lower = [0.1, 0.1, 1.0, 0.005, 1.0]
     upper = [10.0, 10.0, 15.0, 0.05, 15.0]
 
     if model == "jupiter":
-        # Additional parameters: epsilon, phase (radians).
-        lower.extend([0.0, 0.0])
-        upper.extend([0.6, 2.0 * np.pi])
+        # The phase is marginalized by sampling it inside the simulator.
+        lower.append(0.0)
+        upper.append(0.6)
     elif model != "original":
         raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
 
@@ -469,8 +469,8 @@ def main() -> None:
             use_numba=False,
         )
 
-    # Prior ranges (yearly resolution). The Jupiter model appends
-    # epsilon and phase to the five original dynamo parameters.
+    # Prior ranges (yearly resolution). The Jupiter inference appends epsilon
+    # to the five original parameters; phase is sampled inside the simulator.
     lower, upper = _prior_bounds(args.model)
 
     prior = Prior(lower=lower, upper=upper)

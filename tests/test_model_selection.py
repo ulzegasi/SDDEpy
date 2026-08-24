@@ -16,12 +16,12 @@ class PriorSelectionTests(unittest.TestCase):
         self.assertEqual(lower.shape, (5,))
         self.assertEqual(upper.shape, (5,))
 
-    def test_jupiter_prior_has_epsilon_and_phase(self):
+    def test_jupiter_prior_has_epsilon_only(self):
         lower, upper = inference._prior_bounds("jupiter")
-        self.assertEqual(lower.shape, (7,))
-        self.assertEqual(upper.shape, (7,))
-        np.testing.assert_allclose(lower[-2:], [0.0, 0.0])
-        np.testing.assert_allclose(upper[-2:], [0.6, 2.0 * np.pi])
+        self.assertEqual(lower.shape, (6,))
+        self.assertEqual(upper.shape, (6,))
+        self.assertEqual(lower[-1], 0.0)
+        self.assertEqual(upper[-1], 0.6)
 
     def test_unknown_model_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown model"):
@@ -52,9 +52,17 @@ class SimulatorSelectionTests(unittest.TestCase):
         jupiter.assert_not_called()
 
     def test_jupiter_simulator_routes_to_jupiter_batch_function(self):
-        theta = np.ones((2, 7), dtype=float)
+        theta = np.ones((2, 6), dtype=float)
         y = np.empty((2, 3), dtype=float)
         expected = np.full((2, 3), 2.0)
+        expected_rng = np.random.default_rng(1)
+        expected_seeds = expected_rng.integers(
+            0,
+            np.iinfo(np.int32).max,
+            size=theta.shape[0],
+            dtype=np.int64,
+        )
+        expected_phases = expected_rng.uniform(0.0, 2.0 * np.pi, size=theta.shape[0])
 
         with (
             patch.object(setup, "sn_batch_original") as original,
@@ -72,6 +80,22 @@ class SimulatorSelectionTests(unittest.TestCase):
         np.testing.assert_array_equal(y, expected)
         original.assert_not_called()
         jupiter.assert_called_once()
+        theta_simulator = jupiter.call_args.args[0]
+        self.assertEqual(theta_simulator.shape, (2, 7))
+        np.testing.assert_array_equal(theta_simulator[:, :6], theta)
+        np.testing.assert_allclose(theta_simulator[:, 6], expected_phases)
+        np.testing.assert_array_equal(jupiter.call_args.kwargs["seeds"], expected_seeds)
+
+    def test_simulator_rejects_wrong_parameter_dimension(self):
+        with self.assertRaisesRegex(ValueError, "expects 6 inference parameters"):
+            setup.simulator_batch(
+                np.ones((2, 7), dtype=float),
+                np.empty((2, 3), dtype=float),
+                np.random.default_rng(1),
+                Twarmup=2,
+                Tobs=3,
+                model="jupiter",
+            )
 
     def test_build_simulator_preserves_model_for_spawn_pickling(self):
         simulator = setup.build_simulator(Twarmup=200, Tobs=271, model="jupiter")
@@ -103,7 +127,7 @@ class ImportanceFilterSelectionTests(unittest.TestCase):
 
     def test_filter_recognizes_jupiter_population(self):
         self.assertEqual(
-            importance_filter._model_from_population(np.ones((10, 7))),
+            importance_filter._model_from_population(np.ones((10, 6))),
             "jupiter",
         )
 
