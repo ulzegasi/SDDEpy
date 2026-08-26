@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=SNsENCAfftCNN
+#SBATCH --job-name=SNsMLP6v1
 #SBATCH --output=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --error=/cfs/earth/scratch/ulzg/SABCpy/txtout/info.%x.%j.%N.info
 #SBATCH --chdir=/cfs/earth/scratch/ulzg/SABCpy/SDDEpy
@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --time=02-00:00:00
-#SBATCH --partition=earth-3
+#SBATCH --partition=earth-1
 #SBATCH --no-requeue
 #SBATCH --constraint=rhel8
 #SBATCH --mail-type=fail,end
@@ -22,13 +22,13 @@
 DATASET="obsSN"          # "obsSN", "C14", or "synthetic"
 SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
-SUMMARY_STATS="enca_fft_cnn"      # "fft", "enca", "mlp", or "enca_fft_cnn"
+SUMMARY_STATS="mlp"      # "fft", "enca", "mlp", or "enca_fft_cnn"
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 SIMULATOR_SEED="123"     # forward-model simulations; set "" for fresh randomness
 ALGORITHM_SEED="18"      # algorithm randomness; set "" for fresh randomness
 PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh randomness
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
-TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
+TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_MLP_runs/20260611_mlp_z6_1"         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 
 algorithm_label="single"
@@ -36,7 +36,7 @@ if [[ "$ALGORITHM" == "multi_eps" ]]; then
   algorithm_label="multi"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}_enca_fft_cnn"
+RUN_NAME="${DATASET}_${algorithm_label}_mlp6v1"
 
 # ==============================
 # Environment setup
