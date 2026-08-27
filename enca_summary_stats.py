@@ -20,9 +20,12 @@ class EncaSummaryStatsConfig:
     representation_mode: str = "time"
     num_fft_components: int | None = None
     fft_log_eps: float = 1e-8
+    fft_window: str = "none"
 
 
 _ENCODER_CACHE: dict[EncaSummaryStatsConfig, object] = {}
+
+VALID_FFT_WINDOWS = ("none", "hann")
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,43 @@ def _hyper_parameter_bool(
                 return value.strip().lower() in {"1", "true", "yes", "y", "on"}
             return bool(value)
     return default
+
+
+def _normalize_fft_window(value: object, *, allow_auto: bool = False) -> str:
+    """Return the canonical Fourier preprocessing window name."""
+    normalized = str(value).strip().lower()
+    aliases = {
+        "": "none",
+        "no": "none",
+        "null": "none",
+        "rectangular": "none",
+        "boxcar": "none",
+        "hanning": "hann",
+    }
+    normalized = aliases.get(normalized, normalized)
+    valid = (*VALID_FFT_WINDOWS, "auto") if allow_auto else VALID_FFT_WINDOWS
+    if normalized not in valid:
+        choices = ", ".join(valid)
+        raise ValueError(f"Unknown FFT window {value!r}; expected one of: {choices}")
+    return normalized
+
+
+def _resolve_fft_window(hyper_parameters: dict, requested_window: str | None) -> str:
+    """Resolve an explicit window or read it from a training run's metadata."""
+    requested = _normalize_fft_window(
+        "auto" if requested_window is None else requested_window,
+        allow_auto=True,
+    )
+    if requested != "auto":
+        return requested
+
+    for name in ("fft_window", "window", "WINDOW"):
+        if name in hyper_parameters and hyper_parameters[name] is not None:
+            return _normalize_fft_window(hyper_parameters[name])
+
+    # Fourier-CNN runs created before window metadata was introduced used the
+    # raw signal. Preserve that behavior when their metadata has no window key.
+    return "none"
 
 
 def _build_encoder(
@@ -239,6 +279,7 @@ def _timeseries_to_rfft_log1p_amplitudes(
     samples: np.ndarray,
     *,
     num_fft_components: int,
+    fft_window: str = "none",
 ) -> np.ndarray:
     """Match ENCAFourierCNN training preprocessing exactly."""
     max_components = samples.shape[1] // 2 + 1
@@ -247,6 +288,11 @@ def _timeseries_to_rfft_log1p_amplitudes(
             f"num_fft_components={num_fft_components} exceeds the rFFT size "
             f"{max_components} for time-series length {samples.shape[1]}"
         )
+    fft_window = _normalize_fft_window(fft_window)
+    if fft_window == "hann":
+        window = np.hanning(samples.shape[1]).astype(np.float32)
+        samples = samples * window[np.newaxis, :]
+
     amplitudes = np.abs(np.fft.rfft(samples, axis=1))[:, :num_fft_components]
     return np.log1p(amplitudes).astype(np.float32)[:, :, np.newaxis]
 
@@ -417,6 +463,7 @@ def _prepare_samples(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.nda
         return _timeseries_to_rfft_log1p_amplitudes(
             samples,
             num_fft_components=config.num_fft_components,
+            fft_window=config.fft_window,
         )
 
     if config.representation_mode == "time":
@@ -616,6 +663,7 @@ def build_enca_fft_cnn_summary_stats(
     run_dir: str | Path,
     checkpoint_basename: str = "model_best_ckpt",
     expected_tobs: int | None = None,
+    fft_window: str | None = "auto",
 ) -> EncaSummaryStats:
     """Build the Fourier-CNN ENCA encoder used by solar_dynamo training."""
     run_dir = Path(run_dir).expanduser().resolve()
@@ -628,6 +676,7 @@ def build_enca_fft_cnn_summary_stats(
     len_timeseries = int(hyper_parameters["len_timeseries"])
     ndims_latent = int(hyper_parameters["ndims_latent"])
     num_fft_components = int(hyper_parameters["num_fft_components"])
+    resolved_fft_window = _resolve_fft_window(hyper_parameters, fft_window)
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(
@@ -649,6 +698,7 @@ def build_enca_fft_cnn_summary_stats(
         ndims_latent=ndims_latent,
         representation_mode="enca_fft_cnn",
         num_fft_components=num_fft_components,
+        fft_window=resolved_fft_window,
     )
     _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
     return EncaSummaryStats(config)

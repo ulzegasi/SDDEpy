@@ -129,6 +129,19 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--window",
+        "--fft-window",
+        dest="fft_window",
+        type=str.lower,
+        choices=("auto", "none", "hann"),
+        default="auto",
+        help=(
+            "Window applied before the rFFT for --summary-stats enca_fft_cnn. "
+            "'auto' reads it from the training metadata and falls back to "
+            "'none' for older runs. Default: auto."
+        ),
+    )
+    parser.add_argument(
         "--train-run-dir",
         "--enca-run-dir",
         dest="train_run_dir",
@@ -334,6 +347,7 @@ def _build_reconstruction_f_dist(
     fourier_range: tuple[int, ...] | None,
     train_run_dir: str | None,
     enca_checkpoint_basename: str,
+    fft_window: str = "auto",
 ):
     _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
     simulator = build_simulator(Twarmup=200, Tobs=t_obs, model=model)
@@ -368,6 +382,7 @@ def _build_reconstruction_f_dist(
             run_dir=train_run_dir,
             checkpoint_basename=enca_checkpoint_basename,
             expected_tobs=t_obs,
+            fft_window=fft_window,
         )
         stats_fn = enca_fft_cnn_stats.batch
         ss_obs = enca_fft_cnn_stats.observed(obs_data)
@@ -411,6 +426,7 @@ def _reconstruct_rho(
     fourier_range: tuple[int, ...] | None,
     train_run_dir: str | None,
     enca_checkpoint_basename: str,
+    fft_window: str,
     n_repeats: int,
     n_workers: int,
     seed: int,
@@ -428,6 +444,7 @@ def _reconstruct_rho(
         fourier_range=fourier_range,
         train_run_dir=train_run_dir,
         enca_checkpoint_basename=enca_checkpoint_basename,
+        fft_window=fft_window,
     )
     n_stats = int(f_dist.ss_obs.size)
     rho_sum = np.zeros((population.shape[0], n_stats), dtype=float)
@@ -617,6 +634,7 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
         fourier_range=fourier_range,
         train_run_dir=args.train_run_dir,
         enca_checkpoint_basename=args.enca_checkpoint_basename,
+        fft_window=args.fft_window,
         n_repeats=args.n_repeats,
         n_workers=args.n_workers,
         seed=args.seed,

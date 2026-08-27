@@ -130,6 +130,19 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--window",
+        "--fft-window",
+        dest="fft_window",
+        type=str.lower,
+        choices=("auto", "none", "hann"),
+        default="auto",
+        help=(
+            "Window applied before the rFFT for --summary-stats enca_fft_cnn. "
+            "'auto' reads fft_window/window/WINDOW from hyper_parameters.json "
+            "and falls back to 'none' for older runs. Default: auto."
+        ),
+    )
+    parser.add_argument(
         "--train-run-dir",
         "--enca-run-dir",
         dest="train_run_dir",
@@ -416,12 +429,16 @@ def main() -> None:
             run_dir=args.train_run_dir,
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
+            fft_window=args.fft_window,
         )
         fourier_range = None
         stats_fn = enca_fft_cnn_stats.batch
         ss_obs = enca_fft_cnn_stats.observed(SNdata)
         summary_stats_label = "enca_fft_cnn"
-        summary_stats_detail = f"{args.train_run_dir} ({args.enca_checkpoint_basename})"
+        summary_stats_detail = (
+            f"{args.train_run_dir} ({args.enca_checkpoint_basename}), "
+            f"window={enca_fft_cnn_stats.config.fft_window}"
+        )
     elif args.summary_stats == "fno":
         fno_stats = build_fno_summary_stats(
             run_dir=args.train_run_dir,

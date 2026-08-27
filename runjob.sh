@@ -29,6 +29,7 @@ SIMULATOR_SEED="123"     # forward-model simulations; set "" for fresh randomnes
 ALGORITHM_SEED="18"      # algorithm randomness; set "" for fresh randomness
 PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh randomness
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
+WINDOW="Hann"      # enca_fft_cnn preprocessing: "Hann", "None", or "auto" from training metadata
 TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 
@@ -92,6 +93,9 @@ elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STA
   fi
   echo "TRAIN_RUN_DIR=$TRAIN_RUN_DIR"
   echo "ENCA_CHECKPOINT_BASENAME=$ENCA_CHECKPOINT_BASENAME"
+  if [[ "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
+    echo "WINDOW=$WINDOW"
+  fi
 else
   echo "ERROR: SUMMARY_STATS must be fft, enca, mlp, or enca_fft_cnn, got '$SUMMARY_STATS'" >&2
   exit 1
@@ -130,6 +134,10 @@ fi
 if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
   cmd+=(--train-run-dir "$TRAIN_RUN_DIR")
   cmd+=(--enca-checkpoint-basename "$ENCA_CHECKPOINT_BASENAME")
+fi
+
+if [[ "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
+  cmd+=(--window "$WINDOW")
 fi
 
 "${cmd[@]}"
