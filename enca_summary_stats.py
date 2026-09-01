@@ -23,12 +23,14 @@ class EncaSummaryStatsConfig:
     fft_window: str = "none"
     model: str = "original"
     num_model_parameters: int = 5
+    simulation_backend: str | None = None
 
 
 _ENCODER_CACHE: dict[EncaSummaryStatsConfig, object] = {}
 
 VALID_FFT_WINDOWS = ("none", "hann")
 VALID_SDDE_MODELS = ("original", "jupiter")
+CANONICAL_NOISEGRID_BACKEND = "sdde_model_sddeproblem_em_noisegrid_v2"
 
 
 @dataclass(frozen=True)
@@ -659,6 +661,7 @@ def build_enca_summary_stats(
     if num_fft_components is not None:
         num_fft_components = int(num_fft_components)
     fft_log_eps = float(hyper_parameters.get("fft_log_eps", 1e-8))
+    simulation_backend = hyper_parameters.get("simulation_backend")
     model, num_model_parameters = _neural_model_contract(
         hyper_parameters, expected_model
     )
@@ -679,6 +682,7 @@ def build_enca_summary_stats(
         fft_log_eps=fft_log_eps,
         model=model,
         num_model_parameters=num_model_parameters,
+        simulation_backend=simulation_backend,
     )
     _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
     return EncaSummaryStats(config)
@@ -703,6 +707,15 @@ def build_mlp_summary_stats(
             'representation_mode="fourier_amplitude"; '
             f"got {stats.config.representation_mode!r}"
         )
+    if (
+        expected_model is not None
+        and stats.config.simulation_backend != CANONICAL_NOISEGRID_BACKEND
+    ):
+        raise ValueError(
+            "SABC neural inference requires an MLP checkpoint trained with "
+            f"simulation_backend={CANONICAL_NOISEGRID_BACKEND!r}; got "
+            f"{stats.config.simulation_backend!r}. Retrain in a fresh directory."
+        )
     return stats
 
 
@@ -726,9 +739,19 @@ def build_enca_fft_cnn_summary_stats(
     ndims_latent = int(hyper_parameters["ndims_latent"])
     num_fft_components = int(hyper_parameters["num_fft_components"])
     resolved_fft_window = _resolve_fft_window(hyper_parameters, fft_window)
+    simulation_backend = hyper_parameters.get("simulation_backend")
     model, num_model_parameters = _neural_model_contract(
         hyper_parameters, expected_model
     )
+    if (
+        expected_model is not None
+        and simulation_backend != CANONICAL_NOISEGRID_BACKEND
+    ):
+        raise ValueError(
+            "SABC neural inference requires an ENCAfftCNN checkpoint trained "
+            f"with simulation_backend={CANONICAL_NOISEGRID_BACKEND!r}; got "
+            f"{simulation_backend!r}. Retrain in a fresh directory."
+        )
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(
@@ -753,6 +776,7 @@ def build_enca_fft_cnn_summary_stats(
         fft_window=resolved_fft_window,
         model=model,
         num_model_parameters=num_model_parameters,
+        simulation_backend=simulation_backend,
     )
     _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
     return EncaSummaryStats(config)

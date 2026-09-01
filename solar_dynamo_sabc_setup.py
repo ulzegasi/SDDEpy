@@ -12,7 +12,7 @@ import numpy as np
 from sdde_model import (
     hann_window,
     init_julia,
-    sn_batch as sn_batch_original,
+    sn_from_noise_batch as sn_from_noise_batch_original,
     summary_statistics,
     summary_statistics_batch,
 )
@@ -114,10 +114,10 @@ def simulator_batch(
 ) -> None:
     """Simulate yearly sunspot traces for a batch of inference parameters.
 
-    The Jupiter inference has six parameters. Its phase is a nuisance variable:
-    draw one independent bare-noise path and phase per realization, then call
-    the same explicit-noise EM integrator used during encoder training. Neither
-    nuisance variable is part of the inferred parameter vector.
+    Draw one independent bare-noise path per realization and call the same
+    explicit-noise SDDEProblem/EM/NoiseGrid integrator used during neural
+    training. Jupiter additionally draws a nuisance phase, which is not part
+    of the inferred parameter vector.
     """
     theta = np.asarray(theta, dtype=float)
     if theta.ndim != 2:
@@ -132,23 +132,17 @@ def simulator_batch(
             f"got {theta.shape[1]}"
         )
 
+    n_increments = int(round((Twarmup + Tobs) / SDDE_DT))
+    eps_batch = rng.standard_normal(size=(theta.shape[0], n_increments))
     if model == "original":
-        seeds = rng.integers(
-            0,
-            np.iinfo(np.int32).max,
-            size=theta.shape[0],
-            dtype=np.int64,
-        )
-        y_sim = sn_batch_original(
+        y_sim = sn_from_noise_batch_original(
             theta,
+            eps_batch,
             Twarmup=Twarmup,
             Tobs=Tobs,
             dt=SDDE_DT,
-            seeds=seeds,
         )
     else:
-        n_increments = int(round((Twarmup + Tobs) / SDDE_DT))
-        eps_batch = rng.standard_normal(size=(theta.shape[0], n_increments))
         phases = rng.uniform(0.0, 2.0 * np.pi, size=(theta.shape[0], 1))
         theta_simulator = np.concatenate((theta, phases), axis=1)
         y_sim = sn_from_noise_batch_jupiter(

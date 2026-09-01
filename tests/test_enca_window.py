@@ -8,9 +8,11 @@ import unittest
 import numpy as np
 
 from enca_summary_stats import (
+    CANONICAL_NOISEGRID_BACKEND,
     _timeseries_to_fft_log_amplitudes,
     _timeseries_to_rfft_log1p_amplitudes,
     build_enca_fft_cnn_summary_stats,
+    build_mlp_summary_stats,
 )
 
 
@@ -120,6 +122,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
                 "num_fft_components": 4,
                 "model": "jupiter",
                 "num_model_parameters": 6,
+                "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
             }
         )
 
@@ -140,6 +143,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
                 "num_fft_components": 4,
                 "model": "jupiter",
                 "num_model_parameters": 6,
+                "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
             }
         )
 
@@ -157,6 +161,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
                 "num_fft_components": 4,
                 "model": "jupiter",
                 "num_model_parameters": 5,
+                "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
             }
         )
 
@@ -164,6 +169,41 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
             build_enca_fft_cnn_summary_stats(
                 run_dir=run_dir,
                 expected_model="jupiter",
+            )
+
+    def test_sabc_rejects_legacy_fourier_cnn_backend(self):
+        run_dir = self._make_run(
+            {
+                "len_timeseries": 8,
+                "ndims_latent": 5,
+                "num_fft_components": 4,
+                "model": "original",
+                "num_model_parameters": 5,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "Retrain in a fresh directory"):
+            build_enca_fft_cnn_summary_stats(
+                run_dir=run_dir,
+                expected_model="original",
+            )
+
+    def test_sabc_rejects_legacy_mlp_backend(self):
+        run_dir = self._make_run(
+            {
+                "len_timeseries": 8,
+                "ndims_latent": 5,
+                "num_fft_components": 4,
+                "representation_mode": "fourier_amplitude",
+                "model": "original",
+                "num_model_parameters": 5,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "Retrain in a fresh directory"):
+            build_mlp_summary_stats(
+                run_dir=run_dir,
+                expected_model="original",
             )
 
 

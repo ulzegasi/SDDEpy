@@ -33,9 +33,17 @@ class SimulatorSelectionTests(unittest.TestCase):
         theta = np.ones((2, 5), dtype=float)
         y = np.empty((2, 3), dtype=float)
         expected = np.full((2, 3), 1.0)
+        expected_rng = np.random.default_rng(1)
+        expected_noise = expected_rng.standard_normal(
+            size=(theta.shape[0], int(round((2 + 3) / setup.SDDE_DT)))
+        )
 
         with (
-            patch.object(setup, "sn_batch_original", return_value=expected) as original,
+            patch.object(
+                setup,
+                "sn_from_noise_batch_original",
+                return_value=expected,
+            ) as original,
             patch.object(setup, "sn_from_noise_batch_jupiter") as jupiter,
         ):
             setup.simulator_batch(
@@ -49,6 +57,7 @@ class SimulatorSelectionTests(unittest.TestCase):
 
         np.testing.assert_array_equal(y, expected)
         original.assert_called_once()
+        np.testing.assert_allclose(original.call_args.args[1], expected_noise)
         jupiter.assert_not_called()
 
     def test_jupiter_simulator_routes_to_jupiter_batch_function(self):
@@ -62,7 +71,7 @@ class SimulatorSelectionTests(unittest.TestCase):
         expected_phases = expected_rng.uniform(0.0, 2.0 * np.pi, size=theta.shape[0])
 
         with (
-            patch.object(setup, "sn_batch_original") as original,
+            patch.object(setup, "sn_from_noise_batch_original") as original,
             patch.object(
                 setup,
                 "sn_from_noise_batch_jupiter",
