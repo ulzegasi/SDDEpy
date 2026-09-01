@@ -16,11 +16,12 @@ from sdde_model import (
     summary_statistics,
     summary_statistics_batch,
 )
-from sdde_model.solar_dynamo_jupiter import sn_batch as sn_batch_jupiter
+from sdde_model.solar_dynamo_jupiter import sn_from_noise_batch as sn_from_noise_batch_jupiter
 
 DatasetName = str
 ModelName = str
 VALID_MODELS = ("original", "jupiter")
+SDDE_DT = 0.1
 
 
 def load_observed_sn(datadir: Path) -> tuple[np.ndarray, np.ndarray, int]:
@@ -114,8 +115,9 @@ def simulator_batch(
     """Simulate yearly sunspot traces for a batch of inference parameters.
 
     The Jupiter inference has six parameters. Its phase is a nuisance variable:
-    draw one independent phase per simulated realization and append it before
-    calling the unchanged seven-parameter SDDE-model simulator.
+    draw one independent bare-noise path and phase per realization, then call
+    the same explicit-noise EM integrator used during encoder training. Neither
+    nuisance variable is part of the inferred parameter vector.
     """
     theta = np.asarray(theta, dtype=float)
     if theta.ndim != 2:
@@ -130,16 +132,32 @@ def simulator_batch(
             f"got {theta.shape[1]}"
         )
 
-    seeds = rng.integers(0, np.iinfo(np.int32).max, size=theta.shape[0], dtype=np.int64)
     if model == "original":
-        sn_batch = sn_batch_original
-        theta_simulator = theta
+        seeds = rng.integers(
+            0,
+            np.iinfo(np.int32).max,
+            size=theta.shape[0],
+            dtype=np.int64,
+        )
+        y_sim = sn_batch_original(
+            theta,
+            Twarmup=Twarmup,
+            Tobs=Tobs,
+            dt=SDDE_DT,
+            seeds=seeds,
+        )
     else:
-        sn_batch = sn_batch_jupiter
+        n_increments = int(round((Twarmup + Tobs) / SDDE_DT))
+        eps_batch = rng.standard_normal(size=(theta.shape[0], n_increments))
         phases = rng.uniform(0.0, 2.0 * np.pi, size=(theta.shape[0], 1))
         theta_simulator = np.concatenate((theta, phases), axis=1)
-
-    y_sim = sn_batch(theta_simulator, Twarmup=Twarmup, Tobs=Tobs, seeds=seeds)
+        y_sim = sn_from_noise_batch_jupiter(
+            theta_simulator,
+            eps_batch,
+            Twarmup=Twarmup,
+            Tobs=Tobs,
+            dt=SDDE_DT,
+        )
     y[:, :] = np.asarray(y_sim, dtype=np.float64)
 
 

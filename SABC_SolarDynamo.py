@@ -321,7 +321,8 @@ def _prior_bounds(model: str) -> tuple[np.ndarray, np.ndarray]:
     if model == "jupiter":
         # The phase is marginalized by sampling it inside the simulator.
         lower.append(0.0)
-        upper.append(0.6)
+        # Keep Aj identical to the encoder-training prior.
+        upper.append(0.1)
     elif model != "original":
         raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
 
@@ -401,6 +402,7 @@ def main() -> None:
             run_dir=args.train_run_dir,
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
+            expected_model=args.model,
         )
         if enca_stats.config.representation_mode != "time":
             raise ValueError(
@@ -418,6 +420,7 @@ def main() -> None:
             run_dir=args.train_run_dir,
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
+            expected_model=args.model,
         )
         fourier_range = None
         stats_fn = mlp_stats.batch
@@ -430,6 +433,7 @@ def main() -> None:
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
             fft_window=args.fft_window,
+            expected_model=args.model,
         )
         fourier_range = None
         stats_fn = enca_fft_cnn_stats.batch

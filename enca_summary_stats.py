@@ -21,11 +21,14 @@ class EncaSummaryStatsConfig:
     num_fft_components: int | None = None
     fft_log_eps: float = 1e-8
     fft_window: str = "none"
+    model: str = "original"
+    num_model_parameters: int = 5
 
 
 _ENCODER_CACHE: dict[EncaSummaryStatsConfig, object] = {}
 
 VALID_FFT_WINDOWS = ("none", "hann")
+VALID_SDDE_MODELS = ("original", "jupiter")
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,43 @@ def _load_hyper_parameters(run_dir: Path) -> dict:
         raise FileNotFoundError(f"ENCA hyper-parameter file not found: {path}")
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _neural_model_contract(
+    hyper_parameters: dict,
+    expected_model: str | None,
+) -> tuple[str, int]:
+    """Validate the physical-parameter contract saved with an encoder."""
+    model = str(
+        hyper_parameters.get("model", hyper_parameters.get("MODEL", "original"))
+    ).strip().lower()
+    if model not in VALID_SDDE_MODELS:
+        raise ValueError(
+            f"Unknown encoder SDDE model {model!r}; expected one of {VALID_SDDE_MODELS}."
+        )
+    required_parameters = 6 if model == "jupiter" else 5
+    num_model_parameters = int(
+        hyper_parameters.get("num_model_parameters", required_parameters)
+    )
+    if num_model_parameters != required_parameters:
+        raise ValueError(
+            f"Encoder metadata declares model={model!r}, which requires "
+            f"{required_parameters} parameter regressors, but "
+            f"num_model_parameters={num_model_parameters}."
+        )
+    if expected_model is not None:
+        expected_model = str(expected_model).strip().lower()
+        if expected_model not in VALID_SDDE_MODELS:
+            raise ValueError(
+                f"Unknown requested SDDE model {expected_model!r}; expected one "
+                f"of {VALID_SDDE_MODELS}."
+            )
+        if model != expected_model:
+            raise ValueError(
+                f"SABC requested model={expected_model!r}, but the encoder was "
+                f"trained with model={model!r}. Select a matching training run."
+            )
+    return model, num_model_parameters
 
 
 def _checkpoint_prefix(run_dir: Path, basename: str) -> str:
@@ -603,6 +643,7 @@ def build_enca_summary_stats(
     run_dir: str | Path,
     checkpoint_basename: str = "model_best_ckpt",
     expected_tobs: int | None = None,
+    expected_model: str | None = None,
 ) -> EncaSummaryStats:
     run_dir = Path(run_dir).expanduser().resolve()
     if not run_dir.exists():
@@ -618,6 +659,9 @@ def build_enca_summary_stats(
     if num_fft_components is not None:
         num_fft_components = int(num_fft_components)
     fft_log_eps = float(hyper_parameters.get("fft_log_eps", 1e-8))
+    model, num_model_parameters = _neural_model_contract(
+        hyper_parameters, expected_model
+    )
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(
@@ -633,6 +677,8 @@ def build_enca_summary_stats(
         representation_mode=representation_mode,
         num_fft_components=num_fft_components,
         fft_log_eps=fft_log_eps,
+        model=model,
+        num_model_parameters=num_model_parameters,
     )
     _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
     return EncaSummaryStats(config)
@@ -643,11 +689,13 @@ def build_mlp_summary_stats(
     run_dir: str | Path,
     checkpoint_basename: str = "model_best_ckpt",
     expected_tobs: int | None = None,
+    expected_model: str | None = None,
 ) -> EncaSummaryStats:
     stats = build_enca_summary_stats(
         run_dir=run_dir,
         checkpoint_basename=checkpoint_basename,
         expected_tobs=expected_tobs,
+        expected_model=expected_model,
     )
     if stats.config.representation_mode != "fourier_amplitude":
         raise ValueError(
@@ -664,6 +712,7 @@ def build_enca_fft_cnn_summary_stats(
     checkpoint_basename: str = "model_best_ckpt",
     expected_tobs: int | None = None,
     fft_window: str | None = "auto",
+    expected_model: str | None = None,
 ) -> EncaSummaryStats:
     """Build the Fourier-CNN ENCA encoder used by solar_dynamo training."""
     run_dir = Path(run_dir).expanduser().resolve()
@@ -677,6 +726,9 @@ def build_enca_fft_cnn_summary_stats(
     ndims_latent = int(hyper_parameters["ndims_latent"])
     num_fft_components = int(hyper_parameters["num_fft_components"])
     resolved_fft_window = _resolve_fft_window(hyper_parameters, fft_window)
+    model, num_model_parameters = _neural_model_contract(
+        hyper_parameters, expected_model
+    )
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(
@@ -699,6 +751,8 @@ def build_enca_fft_cnn_summary_stats(
         representation_mode="enca_fft_cnn",
         num_fft_components=num_fft_components,
         fft_window=resolved_fft_window,
+        model=model,
+        num_model_parameters=num_model_parameters,
     )
     _checkpoint_prefix(config.run_dir, config.checkpoint_basename)
     return EncaSummaryStats(config)

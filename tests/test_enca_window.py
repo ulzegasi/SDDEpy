@@ -112,6 +112,60 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
 
         self.assertEqual(stats.config.fft_window, "hann")
 
+    def test_jupiter_contract_keeps_all_latent_statistics(self):
+        run_dir = self._make_run(
+            {
+                "len_timeseries": 8,
+                "ndims_latent": 7,
+                "num_fft_components": 4,
+                "model": "jupiter",
+                "num_model_parameters": 6,
+            }
+        )
+
+        stats = build_enca_fft_cnn_summary_stats(
+            run_dir=run_dir,
+            expected_model="jupiter",
+        )
+
+        self.assertEqual(stats.config.model, "jupiter")
+        self.assertEqual(stats.config.num_model_parameters, 6)
+        self.assertEqual(stats.config.ndims_latent, 7)
+
+    def test_inference_model_must_match_encoder_model(self):
+        run_dir = self._make_run(
+            {
+                "len_timeseries": 8,
+                "ndims_latent": 6,
+                "num_fft_components": 4,
+                "model": "jupiter",
+                "num_model_parameters": 6,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "Select a matching training run"):
+            build_enca_fft_cnn_summary_stats(
+                run_dir=run_dir,
+                expected_model="original",
+            )
+
+    def test_jupiter_encoder_requires_six_regressors(self):
+        run_dir = self._make_run(
+            {
+                "len_timeseries": 8,
+                "ndims_latent": 6,
+                "num_fft_components": 4,
+                "model": "jupiter",
+                "num_model_parameters": 5,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires 6 parameter regressors"):
+            build_enca_fft_cnn_summary_stats(
+                run_dir=run_dir,
+                expected_model="jupiter",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

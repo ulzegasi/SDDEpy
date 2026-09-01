@@ -21,7 +21,7 @@ class PriorSelectionTests(unittest.TestCase):
         self.assertEqual(lower.shape, (6,))
         self.assertEqual(upper.shape, (6,))
         self.assertEqual(lower[-1], 0.0)
-        self.assertEqual(upper[-1], 0.6)
+        self.assertEqual(upper[-1], 0.1)
 
     def test_unknown_model_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown model"):
@@ -36,7 +36,7 @@ class SimulatorSelectionTests(unittest.TestCase):
 
         with (
             patch.object(setup, "sn_batch_original", return_value=expected) as original,
-            patch.object(setup, "sn_batch_jupiter") as jupiter,
+            patch.object(setup, "sn_from_noise_batch_jupiter") as jupiter,
         ):
             setup.simulator_batch(
                 theta,
@@ -56,17 +56,18 @@ class SimulatorSelectionTests(unittest.TestCase):
         y = np.empty((2, 3), dtype=float)
         expected = np.full((2, 3), 2.0)
         expected_rng = np.random.default_rng(1)
-        expected_seeds = expected_rng.integers(
-            0,
-            np.iinfo(np.int32).max,
-            size=theta.shape[0],
-            dtype=np.int64,
+        expected_noise = expected_rng.standard_normal(
+            size=(theta.shape[0], int(round((2 + 3) / setup.SDDE_DT)))
         )
         expected_phases = expected_rng.uniform(0.0, 2.0 * np.pi, size=theta.shape[0])
 
         with (
             patch.object(setup, "sn_batch_original") as original,
-            patch.object(setup, "sn_batch_jupiter", return_value=expected) as jupiter,
+            patch.object(
+                setup,
+                "sn_from_noise_batch_jupiter",
+                return_value=expected,
+            ) as jupiter,
         ):
             setup.simulator_batch(
                 theta,
@@ -81,10 +82,11 @@ class SimulatorSelectionTests(unittest.TestCase):
         original.assert_not_called()
         jupiter.assert_called_once()
         theta_simulator = jupiter.call_args.args[0]
+        noise_simulator = jupiter.call_args.args[1]
         self.assertEqual(theta_simulator.shape, (2, 7))
         np.testing.assert_array_equal(theta_simulator[:, :6], theta)
         np.testing.assert_allclose(theta_simulator[:, 6], expected_phases)
-        np.testing.assert_array_equal(jupiter.call_args.kwargs["seeds"], expected_seeds)
+        np.testing.assert_allclose(noise_simulator, expected_noise)
 
     def test_simulator_rejects_wrong_parameter_dimension(self):
         with self.assertRaisesRegex(ValueError, "expects 6 inference parameters"):
