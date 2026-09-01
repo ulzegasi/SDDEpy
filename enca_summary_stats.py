@@ -752,6 +752,12 @@ def build_enca_fft_cnn_summary_stats(
             f"with simulation_backend={CANONICAL_NOISEGRID_BACKEND!r}; got "
             f"{simulation_backend!r}. Retrain in a fresh directory."
         )
+    if expected_model is not None and resolved_fft_window != "hann":
+        raise ValueError(
+            "SABC neural inference requires ENCAfftCNN checkpoint metadata "
+            "with mandatory Hann preprocessing; got "
+            f"fft_window={resolved_fft_window!r}. Retrain in a fresh directory."
+        )
 
     if expected_tobs is not None and len_timeseries != int(expected_tobs):
         raise ValueError(

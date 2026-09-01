@@ -234,11 +234,6 @@ Supported command-line arguments:
   Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
   uses the default definition from the shared `sdde_model` package: `1:6:120`,
   which gives 20 summary statistics.
-- `--window`, `--fft-window`
-  Window applied before the rFFT for `--summary-stats enca_fft_cnn`. Choices:
-  `auto`, `none`, `hann`. With `auto`, the loader reads `fft_window`, `window`,
-  or `WINDOW` from the training run's `hyper_parameters.json`; metadata-free
-  older runs default to `none`.
 - `--train-run-dir`
   Training-run directory used when `--summary-stats enca` or
   `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
@@ -307,11 +302,10 @@ generator. There are four neural modes:
   `log(amplitude + fft_log_eps)`, using values saved in the training run's
   `hyper_parameters.json`.
 - `--summary-stats enca_fft_cnn` uses the Fourier-CNN ENCA encoder from
-  `train_ENCAFourierCNN_model3.py`. It applies the selected training transform,
-  `log1p(abs(rFFT(window * x)))`, keeps the first `num_fft_components`, and
-  presents the result to the Conv1D encoder with shape
-  `(batch, components, 1)`. Select `--window hann` for a Hann-windowed training
-  run or use `--window auto` when the setting is saved in its metadata.
+  `train_ENCAFourierCNN_model3.py`. It reads the mandatory Hann preprocessing
+  from the training metadata, applies `log1p(abs(rFFT(Hann(x))))`, keeps the
+  first `num_fft_components`, and presents the result to the Conv1D encoder
+  with shape `(batch, components, 1)`.
 - `--summary-stats fno` uses a Fourier Neural Operator encoder. The loader reads
   `len_timeseries`, `ndims_latent`, `representation_mode`, and FNO architecture
   values such as `fno_modes`/`modes`, `fno_width`/`width`, and `fno_depth` from
@@ -423,7 +417,6 @@ SIMULATOR_SEED="123"     # forward-model simulations; set "" for fresh randomnes
 ALGORITHM_SEED="18"      # SABC algorithm randomness; set "" for fresh randomness
 PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh randomness
 FOURIER_RANGE=""         # used only when SUMMARY_STATS="fft"
-WINDOW="Hann"            # used only when SUMMARY_STATS="enca_fft_cnn"
 TRAIN_RUN_DIR="/path/on/your/cluster/sdde_ENCAFourierCNN_runs/<run_name>"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 MODEL="original"               # "original" or "jupiter"
@@ -530,9 +523,6 @@ Supported command-line arguments:
 - `--fourier-range`
   Optional 1-based Fourier indices for `--summary-stats fft`, for example
   `1:6:60` or `[1,2,5,9]`.
-- `--window`, `--fft-window`
-  Fourier-CNN input window used when reconstructing distances. Choices:
-  `auto`, `none`, `hann`; it must match the original inference run.
 - `--train-run-dir`
   Training-run directory required when `--summary-stats enca` or
   `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or

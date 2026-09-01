@@ -130,19 +130,6 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--window",
-        "--fft-window",
-        dest="fft_window",
-        type=str.lower,
-        choices=("auto", "none", "hann"),
-        default="auto",
-        help=(
-            "Window applied before the rFFT for --summary-stats enca_fft_cnn. "
-            "'auto' reads fft_window/window/WINDOW from hyper_parameters.json "
-            "and falls back to 'none' for older runs. Default: auto."
-        ),
-    )
-    parser.add_argument(
         "--train-run-dir",
         "--enca-run-dir",
         dest="train_run_dir",
@@ -432,7 +419,6 @@ def main() -> None:
             run_dir=args.train_run_dir,
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
-            fft_window=args.fft_window,
             expected_model=args.model,
         )
         fourier_range = None

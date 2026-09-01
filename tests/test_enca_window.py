@@ -120,6 +120,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
                 "len_timeseries": 8,
                 "ndims_latent": 7,
                 "num_fft_components": 4,
+                "window": "Hann",
                 "model": "jupiter",
                 "num_model_parameters": 6,
                 "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
@@ -141,6 +142,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
                 "len_timeseries": 8,
                 "ndims_latent": 6,
                 "num_fft_components": 4,
+                "window": "Hann",
                 "model": "jupiter",
                 "num_model_parameters": 6,
                 "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
@@ -159,6 +161,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
                 "len_timeseries": 8,
                 "ndims_latent": 6,
                 "num_fft_components": 4,
+                "window": "Hann",
                 "model": "jupiter",
                 "num_model_parameters": 5,
                 "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
@@ -202,6 +205,25 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Retrain in a fresh directory"):
             build_mlp_summary_stats(
+                run_dir=run_dir,
+                expected_model="original",
+            )
+
+    def test_sabc_requires_hann_for_canonical_fourier_cnn(self):
+        run_dir = self._make_run(
+            {
+                "len_timeseries": 8,
+                "ndims_latent": 5,
+                "num_fft_components": 4,
+                "window": "none",
+                "model": "original",
+                "num_model_parameters": 5,
+                "simulation_backend": CANONICAL_NOISEGRID_BACKEND,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "mandatory Hann preprocessing"):
+            build_enca_fft_cnn_summary_stats(
                 run_dir=run_dir,
                 expected_model="original",
             )
