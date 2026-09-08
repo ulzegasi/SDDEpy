@@ -376,6 +376,9 @@ def main() -> None:
         Twarmup=200,
         Tobs=Tobs_without_warmup,
         model=args.model,
+        # The process pool already parallelizes simulations. Avoid nesting
+        # Julia Threads.@threads inside multiple JuliaCall worker runtimes.
+        threaded=args.n_workers <= 1,
     )
 
     if args.summary_stats == "fft":
@@ -450,7 +453,7 @@ def main() -> None:
     if worker_backend == "process":
         make_process_distance = (
             make_process_sim_then_stats_f_dist
-            if args.summary_stats == "fno"
+            if args.summary_stats != "fft"
             else make_process_f_dist
         )
         f_dist = make_process_distance(

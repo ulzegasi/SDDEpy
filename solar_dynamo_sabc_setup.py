@@ -111,6 +111,7 @@ def simulator_batch(
     Twarmup: int,
     Tobs: int,
     model: ModelName,
+    threaded: bool = True,
 ) -> None:
     """Simulate yearly sunspot traces for a batch of inference parameters.
 
@@ -141,6 +142,7 @@ def simulator_batch(
             Twarmup=Twarmup,
             Tobs=Tobs,
             dt=SDDE_DT,
+            threaded=threaded,
         )
     else:
         phases = rng.uniform(0.0, 2.0 * np.pi, size=(theta.shape[0], 1))
@@ -151,15 +153,28 @@ def simulator_batch(
             Twarmup=Twarmup,
             Tobs=Tobs,
             dt=SDDE_DT,
+            threaded=threaded,
         )
     y[:, :] = np.asarray(y_sim, dtype=np.float64)
 
 
-def build_simulator(*, Twarmup: int, Tobs: int, model: ModelName = "original"):
+def build_simulator(
+    *,
+    Twarmup: int,
+    Tobs: int,
+    model: ModelName = "original",
+    threaded: bool = True,
+):
     """Create a picklable simulator with fixed warmup and observation length."""
     if model not in VALID_MODELS:
         raise ValueError(f"Unknown model {model!r}; expected one of {VALID_MODELS}")
-    return partial(simulator_batch, Twarmup=Twarmup, Tobs=Tobs, model=model)
+    return partial(
+        simulator_batch,
+        Twarmup=Twarmup,
+        Tobs=Tobs,
+        model=model,
+        threaded=threaded,
+    )
 
 
 def stats_fn_batch(y: np.ndarray, ss_out: np.ndarray) -> None:

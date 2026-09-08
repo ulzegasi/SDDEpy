@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -58,6 +58,7 @@ class SimulatorSelectionTests(unittest.TestCase):
         np.testing.assert_array_equal(y, expected)
         original.assert_called_once()
         np.testing.assert_allclose(original.call_args.args[1], expected_noise)
+        self.assertTrue(original.call_args.kwargs["threaded"])
         jupiter.assert_not_called()
 
     def test_jupiter_simulator_routes_to_jupiter_batch_function(self):
@@ -96,6 +97,7 @@ class SimulatorSelectionTests(unittest.TestCase):
         np.testing.assert_array_equal(theta_simulator[:, :6], theta)
         np.testing.assert_allclose(theta_simulator[:, 6], expected_phases)
         np.testing.assert_allclose(noise_simulator, expected_noise)
+        self.assertTrue(jupiter.call_args.kwargs["threaded"])
 
     def test_simulator_rejects_wrong_parameter_dimension(self):
         with self.assertRaisesRegex(ValueError, "expects 6 inference parameters"):
@@ -109,10 +111,16 @@ class SimulatorSelectionTests(unittest.TestCase):
             )
 
     def test_build_simulator_preserves_model_for_spawn_pickling(self):
-        simulator = setup.build_simulator(Twarmup=200, Tobs=271, model="jupiter")
+        simulator = setup.build_simulator(
+            Twarmup=200,
+            Tobs=271,
+            model="jupiter",
+            threaded=False,
+        )
         self.assertEqual(simulator.keywords["model"], "jupiter")
         self.assertEqual(simulator.keywords["Twarmup"], 200)
         self.assertEqual(simulator.keywords["Tobs"], 271)
+        self.assertFalse(simulator.keywords["threaded"])
 
 
 class RunNamingTests(unittest.TestCase):
@@ -141,6 +149,53 @@ class ImportanceFilterSelectionTests(unittest.TestCase):
             importance_filter._model_from_population(np.ones((10, 6))),
             "jupiter",
         )
+
+    def test_mlp_process_workers_use_serial_julia_and_parent_stats(self):
+        stats = Mock()
+        stats.observed.return_value = np.zeros(6)
+        distance = object()
+
+        with (
+            patch.object(
+                importance_filter,
+                "load_dataset",
+                return_value=(np.arange(3), np.ones(3), 3),
+            ),
+            patch.object(importance_filter, "build_simulator") as build_simulator,
+            patch.object(
+                importance_filter,
+                "build_mlp_summary_stats",
+                return_value=stats,
+            ) as build_mlp,
+            patch.object(
+                importance_filter,
+                "make_process_sim_then_stats_f_dist",
+                return_value=distance,
+            ) as build_distance,
+            patch.object(importance_filter, "make_process_f_dist") as build_worker_stats,
+        ):
+            actual = importance_filter._build_reconstruction_f_dist(
+                "obsSN",
+                model="jupiter",
+                n_workers=4,
+                seed=123,
+                synthetic_data_path=None,
+                summary_stats="mlp",
+                fourier_range=None,
+                train_run_dir="/tmp/mlp-run",
+                enca_checkpoint_basename="model_best_ckpt",
+            )
+
+        self.assertIs(actual, distance)
+        build_simulator.assert_called_once_with(
+            Twarmup=200,
+            Tobs=3,
+            model="jupiter",
+            threaded=False,
+        )
+        self.assertEqual(build_mlp.call_args.kwargs["expected_model"], "jupiter")
+        build_distance.assert_called_once()
+        build_worker_stats.assert_not_called()
 
 
 if __name__ == "__main__":

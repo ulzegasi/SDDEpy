@@ -211,7 +211,9 @@ Supported command-line arguments:
   a fresh run, `1` to continue a previous run.
 - `--n-workers`
   Number of workers for the distance-function evaluation. Use `1` for the
-  serial/thread path or `>1` for the Julia-safe process path.
+  Julia-threaded path or `>1` for process-level parallelism with a serial Julia
+  batch inside each worker. Neural summary statistics are evaluated once in the
+  parent process so TensorFlow is not loaded into the Julia workers.
 - `--simulator-seed`
   Optional seed for the forward-model simulations. Runs use fresh randomness
   when it is omitted.
@@ -541,7 +543,8 @@ Supported command-line arguments:
   Target retained mass for the KDE-based cutoff. Default: `0.70`.
 - `--n-workers`
   Number of worker processes used for the reconstructed-distance step.
-  Default: `4`.
+  Default: `4`. Each worker uses a serial Julia batch to avoid nested Julia
+  threading; neural summary statistics run in the parent process.
 - `--seed`
   Base random seed used for the reconstructed-distance simulations.
   Default: `123`.

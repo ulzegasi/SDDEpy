@@ -337,7 +337,14 @@ def _build_reconstruction_f_dist(
     fft_window: str = "auto",
 ):
     _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
-    simulator = build_simulator(Twarmup=200, Tobs=t_obs, model=model)
+    simulator = build_simulator(
+        Twarmup=200,
+        Tobs=t_obs,
+        model=model,
+        # The process pool already parallelizes simulations. Avoid nesting
+        # Julia Threads.@threads inside multiple JuliaCall worker runtimes.
+        threaded=n_workers <= 1,
+    )
 
     if summary_stats == "fft":
         stats_fn = build_stats_fn(fourier_range=fourier_range)
@@ -347,6 +354,7 @@ def _build_reconstruction_f_dist(
             run_dir=train_run_dir,
             checkpoint_basename=enca_checkpoint_basename,
             expected_tobs=t_obs,
+            expected_model=model,
         )
         if enca_stats.config.representation_mode != "time":
             raise ValueError(
@@ -361,6 +369,7 @@ def _build_reconstruction_f_dist(
             run_dir=train_run_dir,
             checkpoint_basename=enca_checkpoint_basename,
             expected_tobs=t_obs,
+            expected_model=model,
         )
         stats_fn = mlp_stats.batch
         ss_obs = mlp_stats.observed(obs_data)
@@ -370,6 +379,7 @@ def _build_reconstruction_f_dist(
             checkpoint_basename=enca_checkpoint_basename,
             expected_tobs=t_obs,
             fft_window=fft_window,
+            expected_model=model,
         )
         stats_fn = enca_fft_cnn_stats.batch
         ss_obs = enca_fft_cnn_stats.observed(obs_data)
@@ -386,7 +396,7 @@ def _build_reconstruction_f_dist(
 
     make_process_distance = (
         make_process_sim_then_stats_f_dist
-        if summary_stats == "fno"
+        if summary_stats != "fft"
         else make_process_f_dist
     )
     return make_process_distance(
