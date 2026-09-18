@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import json
 import os
@@ -24,6 +24,7 @@ class EncaSummaryStatsConfig:
     model: str = "original"
     num_model_parameters: int = 5
     simulation_backend: str | None = None
+    mlp_use_first_stats: int | None = None
 
 
 _ENCODER_CACHE: dict[EncaSummaryStatsConfig, object] = {}
@@ -544,6 +545,8 @@ def _encode(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
             f"ENCA encoder returned shape {z.shape}; expected "
             f"(batch, {config.ndims_latent})"
         )
+    if config.mlp_use_first_stats is not None:
+        z = z[:, :config.mlp_use_first_stats]
     return z
 
 
@@ -694,6 +697,7 @@ def build_mlp_summary_stats(
     checkpoint_basename: str = "model_best_ckpt",
     expected_tobs: int | None = None,
     expected_model: str | None = None,
+    use_first_stats: int | None = None,
 ) -> EncaSummaryStats:
     stats = build_enca_summary_stats(
         run_dir=run_dir,
@@ -716,6 +720,19 @@ def build_mlp_summary_stats(
             f"simulation_backend={CANONICAL_NOISEGRID_BACKEND!r}; got "
             f"{stats.config.simulation_backend!r}. Retrain in a fresh directory."
         )
+    if use_first_stats is not None:
+        if (
+            isinstance(use_first_stats, bool)
+            or not isinstance(use_first_stats, int)
+            or not 1 <= use_first_stats <= stats.config.ndims_latent
+        ):
+            raise ValueError(
+                "--mlp-use-first-stats must be an integer between 1 and "
+                f"the encoder width ({stats.config.ndims_latent})"
+            )
+        stats = EncaSummaryStats(replace(
+            stats.config, mlp_use_first_stats=use_first_stats
+        ))
     return stats
 
 

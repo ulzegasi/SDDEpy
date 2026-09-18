@@ -323,6 +323,17 @@ Use ENCA summaries by setting:
 --train-run-dir /path/to/enca/run
 ```
 
+To test only the first five outputs of an existing MLP6 encoder, add
+`--mlp-use-first-stats 5` to an MLP inference. In `runjob.sh`, set
+`SUMMARY_STATS="mlp"` and `MLP_USE_FIRST_STATS="5"`, select the existing training
+directory, and give the fresh inference a distinct `RUN_NAME` (for example,
+`obsSN_single_mlp6_first5`). The encoder still loads all six outputs; selection
+is applied identically to observations and simulations. The selection is
+stored in the pickled summary-statistics configuration and reported in logs.
+It cannot be changed when resuming an existing inference. Leave
+`MLP_USE_FIRST_STATS=""` (or omit the CLI option) to use all outputs. This option
+is only valid for `--summary-stats mlp`; other backends are unaffected.
+
 Use Fourier/MLP ENCA summaries by setting:
 
 ```bash

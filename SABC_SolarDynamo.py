@@ -144,7 +144,16 @@ def _parse_args() -> argparse.Namespace:
             "Defaults to model_best_ckpt."
         ),
     )
+    parser.add_argument(
+        "--mlp-use-first-stats", type=int, default=None,
+        help="Use only the first N MLP encoder outputs; omit to use all outputs.",
+    )
     args = parser.parse_args()
+    if args.mlp_use_first_stats is not None:
+        if args.summary_stats != "mlp":
+            parser.error("--mlp-use-first-stats requires --summary-stats mlp")
+        if args.mlp_use_first_stats < 1:
+            parser.error("--mlp-use-first-stats must be positive")
     if args.dataset == "synthetic":
         if args.synthetic_data_file is None:
             parser.error("Missing data file, specify --synthetic-data-file")
@@ -411,12 +420,16 @@ def main() -> None:
             checkpoint_basename=args.enca_checkpoint_basename,
             expected_tobs=Tobs_without_warmup,
             expected_model=args.model,
+            use_first_stats=args.mlp_use_first_stats,
         )
         fourier_range = None
         stats_fn = mlp_stats.batch
         ss_obs = mlp_stats.observed(SNdata)
         summary_stats_label = "mlp"
         summary_stats_detail = f"{args.train_run_dir} ({args.enca_checkpoint_basename})"
+        summary_stats_detail += (
+            f"; using first {ss_obs.size} of {mlp_stats.config.ndims_latent} outputs"
+        )
     elif args.summary_stats == "enca_fft_cnn":
         enca_fft_cnn_stats = build_enca_fft_cnn_summary_stats(
             run_dir=args.train_run_dir,
@@ -514,6 +527,16 @@ def main() -> None:
             raise FileNotFoundError(f"Previous result not found: {prev_path}")
 
         out_prev = load_sabc_result(prev_path)
+        previous_stats_fn = getattr(out_prev.config.f_dist, "stats_fn", None)
+        previous_stats_config = getattr(
+            getattr(previous_stats_fn, "__self__", None), "config", None
+        )
+        previous_selection = getattr(previous_stats_config, "mlp_use_first_stats", None)
+        if previous_selection != args.mlp_use_first_stats:
+            raise ValueError(
+                "Cannot change --mlp-use-first-stats when resuming a saved result. "
+                "Start a fresh inference with a new run name."
+            )
         previous_population = np.asarray(out_prev.population)
         if previous_population.ndim != 2 or previous_population.shape[1] != lower.size:
             previous_n_parameters = (

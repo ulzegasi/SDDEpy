@@ -31,6 +31,7 @@ PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh ra
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
 TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
+MLP_USE_FIRST_STATS=""   # MLP only: set "5" for first five outputs; "" uses all
 
 algorithm_label="single"
 if [[ "$ALGORITHM" == "multi_eps" ]]; then
@@ -43,6 +44,11 @@ if [[ "$MODEL" == "jupiter" ]]; then
 fi
 
 RUN_NAME="${DATASET}_${algorithm_label}${model_label}_enca_fft_cnn"
+
+if [[ -n "$MLP_USE_FIRST_STATS" && "$SUMMARY_STATS" != "mlp" ]]; then
+  echo "ERROR: MLP_USE_FIRST_STATS requires SUMMARY_STATS=mlp" >&2
+  exit 1
+fi
 
 # ==============================
 # Environment setup
@@ -83,6 +89,9 @@ echo "ALGORITHM_SEED=${ALGORITHM_SEED:-random}"
 echo "PROPOSAL_SEED=${PROPOSAL_SEED:-random}"
 echo "RUN_NAME=$RUN_NAME"
 echo "SUMMARY_STATS=$SUMMARY_STATS"
+if [[ "$SUMMARY_STATS" == "mlp" ]]; then
+  echo "MLP_USE_FIRST_STATS=${MLP_USE_FIRST_STATS:-all}"
+fi
 if [[ "$SUMMARY_STATS" == "fft" ]]; then
   echo "FOURIER_RANGE=${FOURIER_RANGE:-default 1:6:120}"
 elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
@@ -130,6 +139,10 @@ fi
 if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
   cmd+=(--train-run-dir "$TRAIN_RUN_DIR")
   cmd+=(--enca-checkpoint-basename "$ENCA_CHECKPOINT_BASENAME")
+fi
+
+if [[ -n "$MLP_USE_FIRST_STATS" ]]; then
+  cmd+=(--mlp-use-first-stats "$MLP_USE_FIRST_STATS")
 fi
 
 "${cmd[@]}"
