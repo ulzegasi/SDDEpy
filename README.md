@@ -307,12 +307,13 @@ ALGORITHM="single_eps"
 SUMMARY_STATS="spectral_peaks"
 FOURIER_RANGE=""
 MLP_USE_FIRST_STATS=""
-RUN_NAME="obsSN_single_jupiter_spectral_peaks"
+RUN_NAME="${DATASET}_${algorithm_label}${model_label}_spectral_peaks"
 ```
 
-Set `RUN_NAME` manually, without a file extension; the script does not derive
-it from the model or summary-statistics mode. Use a distinct name for additional
-repetitions. The three seed variables retain their existing values. `TRAIN_RUN_DIR` is unused.
+The existing dataset/algorithm/model prefix is retained. Edit the suffix in the
+`RUN_NAME` assignment manually, without a file extension; `SUMMARY_STATS` does
+not select the filename suffix. Use a distinct name for additional repetitions.
+The three seed variables retain their existing values. `TRAIN_RUN_DIR` is unused.
 The other modes and their current job defaults are unchanged.
 
 The equivalent CLI invocation is:
