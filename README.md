@@ -307,11 +307,12 @@ ALGORITHM="single_eps"
 SUMMARY_STATS="spectral_peaks"
 FOURIER_RANGE=""
 MLP_USE_FIRST_STATS=""
+RUN_NAME="obsSN_single_jupiter_spectral_peaks"
 ```
 
-The script selects `obsSN_single_jupiter_spectral_peaks` as the output name for
-this combination. Use a distinct `RUN_NAME` for additional repetitions. The
-three seed variables retain their existing values. `TRAIN_RUN_DIR` is unused.
+Set `RUN_NAME` manually, without a file extension; the script does not derive
+it from the model or summary-statistics mode. Use a distinct name for additional
+repetitions. The three seed variables retain their existing values. `TRAIN_RUN_DIR` is unused.
 The other modes and their current job defaults are unchanged.
 
 The equivalent CLI invocation is:

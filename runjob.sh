@@ -35,21 +35,7 @@ TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enc
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 MLP_USE_FIRST_STATS=""   # MLP only: set "5" for first five outputs; "" uses all
 
-algorithm_label="single"
-if [[ "$ALGORITHM" == "multi_eps" ]]; then
-  algorithm_label="multi"
-fi
-
-model_label=""
-if [[ "$MODEL" == "jupiter" ]]; then
-  model_label="_jupiter"
-fi
-
-summary_label="enca_fft_cnn"
-if [[ "$SUMMARY_STATS" == "spectral_peaks" ]]; then
-  summary_label="spectral_peaks"
-fi
-RUN_NAME="${DATASET}_${algorithm_label}${model_label}_${summary_label}"
+RUN_NAME="obsSN_single_enca_fft_cnn"  # Output basename: set manually, without an extension.
 
 if [[ -n "$MLP_USE_FIRST_STATS" && "$SUMMARY_STATS" != "mlp" ]]; then
   echo "ERROR: MLP_USE_FIRST_STATS requires SUMMARY_STATS=mlp" >&2
