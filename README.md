@@ -231,7 +231,7 @@ Supported command-line arguments:
   Name of the saved run to continue from when `--from-previous 1` is used.
 - `--summary-stats`
   Selects the summary-statistics backend. Choices: `fft`, `enca`, `mlp`,
-  `enca_fft_cnn`, `fno`. Default: `fft`.
+  `enca_fft_cnn`, `fno`, `spectral_peaks`. Default: `fft`.
 - `--fourier-range`
   Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
   uses the default definition from the shared `sdde_model` package: `1:6:120`,
@@ -289,6 +289,92 @@ python3 SABC_SolarDynamo.py \
 
 The current default FFT summary-statistics function remains unchanged and is
 used whenever `--fourier-range` is not provided.
+
+### Spectral Peak Loss (opt-in)
+
+`--summary-stats spectral_peaks` uses the frozen `spectral_peaks_v1` score tested
+on the saved posterior simulations. It currently requires `--dataset obsSN`
+(the 271 annual observations) and `--algorithm single_eps`. Either forward model
+can be used. It needs only the standard `sddepy_env`, with NumPy and SciPy;
+no training or TensorFlow is required.
+
+For the Jupiter robustness test, set these variables in `runjob.sh`:
+
+```bash
+DATASET="obsSN"
+MODEL="jupiter"
+ALGORITHM="single_eps"
+SUMMARY_STATS="spectral_peaks"
+FOURIER_RANGE=""
+MLP_USE_FIRST_STATS=""
+```
+
+The script selects `obsSN_single_jupiter_spectral_peaks` as the output name for
+this combination. Use a distinct `RUN_NAME` for additional repetitions. The
+three seed variables retain their existing values. `TRAIN_RUN_DIR` is unused.
+The other modes and their current job defaults are unchanged.
+
+The equivalent CLI invocation is:
+
+```bash
+python3 SABC_SolarDynamo.py \
+  --dataset obsSN --model jupiter --algorithm single_eps \
+  --summary-stats spectral_peaks --n-workers 32 \
+  --simulator-seed 123 --algorithm-seed 18 --proposal-seed 22 \
+  --run-name obsSN_single_jupiter_spectral_peaks
+```
+
+Both observed and simulated records receive the same Hann window, without
+detrending. The six feature penalties are combined as
+`L = (5*main + 5*Gleissberg + L15 + L17 + L27 + L39) / 14`.
+Every component is in `[0, 1]`, with 0 meaning a match and 1 the maximum penalty.
+
+| Feature | Observed target under this processing | Weight | Frequency-error width |
+| --- | --- | --- | --- |
+| Main cycle | 10.84 years, native bin 25 | 5 | 3 native bins |
+| Gleissberg feature | About 98.75 years, refined observed maximum | 5 | 1 native bin |
+| Secondary | 15.06 years, bin 18 | 1 | 1.5 native bins |
+| Secondary | 16.94 years, bin 16 | 1 | 1.5 native bins |
+| Secondary | 27.10 years, bin 10 | 1 | 1.5 native bins |
+| Secondary | 38.71 years, bin 7 | 1 | 1.5 native bins |
+
+One native frequency bin is `1/271` cycles/year. These widths are scoring
+conventions, not estimated uncertainties. No target period below 10 years is
+matched. The main feature must also be the strongest Fourier component in the
+8–20-year band, so a weaker 11-year bump cannot hide a displaced dominant cycle.
+
+For native-grid features, the penalty is the absolute frequency-bin error
+divided by its width, capped at 1; a missing or ineligible peak costs 1. Peaks
+must have prominence at least 10% of their own magnitude and at least 2% of the
+maximum magnitude in their region (bins 2–5, 6–13, or 14–27). The main peak is
+assigned first; the remaining native peaks use a minimum-cost one-to-one
+assignment, so a merged peak cannot satisfy both secondary targets.
+
+For Gleissberg, the windowed record is zero-padded to a 32-times-denser Fourier
+grid. Local maxima within 60–140 years are refined with a three-point parabola
+on log magnitude. Candidate visibility is
+`v = min(1, prominence/(0.1*height), prominence/(0.02*regional_max))`, multiplied
+by a linear taper to zero over 0.2 native bins at the search boundaries. The
+penalty is the best candidate's `1 - v*(1 - min(1, frequency_error/width))`;
+no candidate costs 1. The target comes from the observed record under this same
+processing; it is not fixed at 87 years. Padding adds no data or physical
+frequency resolution.
+
+Peak heights determine visibility only; absolute amplitudes are not compared.
+Extra, unassigned peaks are not penalized. Flat or nonfinite simulated records
+receive the maximum loss of 1.
+
+The adapter supplies the **one combined loss** to SABC as a distance against
+zero. SABC then applies its normal prior-CDF transformation and single-epsilon
+annealing. Combining first preserves the chosen ordering and weight tradeoffs;
+the six component losses are not separately transformed. No SABC library,
+simulator, prior range, seed handling, FFT mode, or neural mode is changed.
+
+The settings, observed-data hash, targets, weights, and score version are stored
+in the result pickle and written before inference to
+`output/spectral_peaks_<RUN_NAME>.json`, as well as the job log. Resume checks
+reject switching to/from this mode or changing its settings or observations.
+Begin this experiment with a fresh run, not a continuation of an FFT population.
 
 ### Neural Encoder Summary Statistics
 

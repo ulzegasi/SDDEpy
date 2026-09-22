@@ -23,7 +23,9 @@ DATASET="obsSN"          # "obsSN", "C14", or "synthetic"
 MODEL="original"         # "original" or "jupiter"
 SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
-SUMMARY_STATS="enca_fft_cnn"      # "fft", "enca", "mlp", or "enca_fft_cnn"
+SUMMARY_STATS="enca_fft_cnn"      # "fft", "spectral_peaks", "enca", "mlp", or "enca_fft_cnn"
+# For the peak-loss test: MODEL="jupiter", SUMMARY_STATS="spectral_peaks".
+# spectral_peaks requires DATASET="obsSN" and ALGORITHM="single_eps"; no training needed.
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
 SIMULATOR_SEED="123"     # forward-model simulations; set "" for fresh randomness
 ALGORITHM_SEED="18"      # algorithm randomness; set "" for fresh randomness
@@ -43,10 +45,22 @@ if [[ "$MODEL" == "jupiter" ]]; then
   model_label="_jupiter"
 fi
 
-RUN_NAME="${DATASET}_${algorithm_label}${model_label}_enca_fft_cnn"
+summary_label="enca_fft_cnn"
+if [[ "$SUMMARY_STATS" == "spectral_peaks" ]]; then
+  summary_label="spectral_peaks"
+fi
+RUN_NAME="${DATASET}_${algorithm_label}${model_label}_${summary_label}"
 
 if [[ -n "$MLP_USE_FIRST_STATS" && "$SUMMARY_STATS" != "mlp" ]]; then
   echo "ERROR: MLP_USE_FIRST_STATS requires SUMMARY_STATS=mlp" >&2
+  exit 1
+fi
+if [[ "$SUMMARY_STATS" == "spectral_peaks" && ( "$DATASET" != "obsSN" || "$ALGORITHM" != "single_eps" ) ]]; then
+  echo "ERROR: spectral_peaks requires DATASET=obsSN and ALGORITHM=single_eps" >&2
+  exit 1
+fi
+if [[ "$SUMMARY_STATS" == "spectral_peaks" && -n "$FOURIER_RANGE" ]]; then
+  echo "ERROR: FOURIER_RANGE must be empty for spectral_peaks (the peak score has its own targets)" >&2
   exit 1
 fi
 
@@ -94,6 +108,8 @@ if [[ "$SUMMARY_STATS" == "mlp" ]]; then
 fi
 if [[ "$SUMMARY_STATS" == "fft" ]]; then
   echo "FOURIER_RANGE=${FOURIER_RANGE:-default 1:6:120}"
+elif [[ "$SUMMARY_STATS" == "spectral_peaks" ]]; then
+  echo "SPECTRAL_PEAK_SCORE=spectral_peaks_v1; weights=5,5,1,1,1,1; Gleissberg grid=32x"
 elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
   if [[ -z "$TRAIN_RUN_DIR" ]]; then
     echo "ERROR: TRAIN_RUN_DIR must be set when SUMMARY_STATS=$SUMMARY_STATS" >&2
@@ -102,7 +118,7 @@ elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STA
   echo "TRAIN_RUN_DIR=$TRAIN_RUN_DIR"
   echo "ENCA_CHECKPOINT_BASENAME=$ENCA_CHECKPOINT_BASENAME"
 else
-  echo "ERROR: SUMMARY_STATS must be fft, enca, mlp, or enca_fft_cnn, got '$SUMMARY_STATS'" >&2
+  echo "ERROR: SUMMARY_STATS must be fft, spectral_peaks, enca, mlp, or enca_fft_cnn, got '$SUMMARY_STATS'" >&2
   exit 1
 fi
 

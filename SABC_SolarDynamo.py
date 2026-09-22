@@ -23,6 +23,11 @@ from enca_summary_stats import (
     build_mlp_summary_stats,
 )
 from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
+from spectral_peak_stats import (
+    build_spectral_peak_stats,
+    save_spectral_peak_metadata,
+    validate_spectral_peak_resume,
+)
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
     VALID_MODELS,
@@ -56,7 +61,7 @@ LOCAL_OUT_DIR = PROJECT_DIR / "output"
 SYNTHETIC_DATA_DIR = LOCAL_DATA_DIR / "synthetic_data"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
-VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -114,6 +119,7 @@ def _parse_args() -> argparse.Namespace:
         default="fft",
         help=(
             "Summary-statistics backend. 'fft' keeps the current Fourier summaries; "
+            "'spectral_peaks' uses the frozen weighted peak-location loss for obsSN; "
             "'enca' uses the original time-series ENCA encoder; "
             "'mlp' uses a Fourier/MLP ENCA encoder; "
             "'enca_fft_cnn' uses the Fourier-CNN ENCA encoder; "
@@ -149,6 +155,13 @@ def _parse_args() -> argparse.Namespace:
         help="Use only the first N MLP encoder outputs; omit to use all outputs.",
     )
     args = parser.parse_args()
+    if args.summary_stats == "spectral_peaks":
+        if args.dataset != "obsSN":
+            parser.error("--summary-stats spectral_peaks currently requires --dataset obsSN")
+        if args.algorithm != "single_eps":
+            parser.error("--summary-stats spectral_peaks uses one combined loss; choose --algorithm single_eps")
+        if args.fourier_range is not None:
+            parser.error("--fourier-range can only be used with --summary-stats fft")
     if args.mlp_use_first_stats is not None:
         if args.summary_stats != "mlp":
             parser.error("--mlp-use-first-stats requires --summary-stats mlp")
@@ -390,7 +403,17 @@ def main() -> None:
         threaded=args.n_workers <= 1,
     )
 
-    if args.summary_stats == "fft":
+    spectral_stats = None
+    if args.summary_stats == "spectral_peaks":
+        if not np.allclose(np.diff(SNyrs), 1.0, rtol=0, atol=1e-8):
+            raise ValueError("spectral_peaks requires evenly spaced annual observations.")
+        spectral_stats = build_spectral_peak_stats(SNdata)
+        fourier_range = None
+        stats_fn = spectral_stats.batch
+        ss_obs = spectral_stats.ss_obs
+        summary_stats_label = "spectral_peaks"
+        summary_stats_detail = spectral_stats.config.version
+    elif args.summary_stats == "fft":
         fourier_range = _parse_fourier_range(args.fourier_range)
         stats_fn = build_stats_fn(fourier_range=fourier_range)
         ss_obs = observed_summary_statistics(SNdata, fourier_range=fourier_range)
@@ -466,7 +489,7 @@ def main() -> None:
     if worker_backend == "process":
         make_process_distance = (
             make_process_sim_then_stats_f_dist
-            if args.summary_stats != "fft"
+            if args.summary_stats not in ("fft", "spectral_peaks")
             else make_process_f_dist
         )
         f_dist = make_process_distance(
@@ -519,6 +542,8 @@ def main() -> None:
     )
 
     if args.from_previous == 0:
+        if spectral_stats is not None:
+            save_spectral_peak_metadata(spectral_stats, outdir / f"spectral_peaks_{run_name}.json")
         sabc_wallclock_start = time.perf_counter()
         out = sabc(config, n_simulation=n_simulation)
     else:
@@ -528,6 +553,7 @@ def main() -> None:
 
         out_prev = load_sabc_result(prev_path)
         previous_stats_fn = getattr(out_prev.config.f_dist, "stats_fn", None)
+        validate_spectral_peak_resume(previous_stats_fn, stats_fn)
         previous_stats_config = getattr(
             getattr(previous_stats_fn, "__self__", None), "config", None
         )
@@ -549,6 +575,8 @@ def main() -> None:
                 f"the saved population has {previous_n_parameters} parameters, "
                 f"but this model requires {lower.size}."
             )
+        if spectral_stats is not None:
+            save_spectral_peak_metadata(spectral_stats, outdir / f"spectral_peaks_{run_name}.json")
         sabc_wallclock_start = time.perf_counter()
         out = update_population(out_prev, n_simulation=n_simulation)
 
