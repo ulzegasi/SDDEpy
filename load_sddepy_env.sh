@@ -14,7 +14,7 @@ module load openmpi/4.1.4
 
 if [[ "${SUMMARY_STATS:-fft}" == "fno" ]]; then
   env_name="sddepy_fno_env"
-elif [[ "${SUMMARY_STATS:-fft}" == "enca" || "${SUMMARY_STATS:-fft}" == "mlp" || "${SUMMARY_STATS:-fft}" == "enca_fft_cnn" ]]; then
+elif [[ "${SUMMARY_STATS:-fft}" == "enca" || "${SUMMARY_STATS:-fft}" == "mlp" || "${SUMMARY_STATS:-fft}" == "enca_fft_cnn" || "${SUMMARY_STATS:-fft}" == "enca_fft_cnn_5+1" ]]; then
   env_name="sddepy_enca_env"
 else
   env_name="sddepy_env"

@@ -231,20 +231,17 @@ Supported command-line arguments:
   Name of the saved run to continue from when `--from-previous 1` is used.
 - `--summary-stats`
   Selects the summary-statistics backend. Choices: `fft`, `enca`, `mlp`,
-  `enca_fft_cnn`, `fno`, `spectral_peaks`. Default: `fft`.
+  `enca_fft_cnn`, `enca_fft_cnn_5+1`, `fno`, `spectral_peaks`. Default: `fft`.
 - `--fourier-range`
   Optional custom Fourier indices for `--summary-stats fft`. If omitted, the run
   uses the default definition from the shared `sdde_model` package: `1:6:120`,
   which gives 20 summary statistics.
 - `--train-run-dir`
-  Training-run directory used when `--summary-stats enca` or
-  `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
-  `--summary-stats fno`. It must contain
+  Training-run directory required for every neural mode, including
+  `enca_fft_cnn_5+1`. It must contain
   `hyper_parameters.json` and TensorFlow checkpoint files.
 - `--enca-checkpoint-basename`
-  Checkpoint family to load when `--summary-stats enca` or
-  `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
-  `--summary-stats fno`. Default:
+  Checkpoint family to load for a neural mode. Default:
   `model_best_ckpt`.
 
 ### Custom Fourier Summary Statistics
@@ -381,7 +378,7 @@ Begin this experiment with a fresh run, not a continuation of an FFT population.
 ### Neural Encoder Summary Statistics
 
 The driver can also use a trained neural encoder as the summary-statistics
-generator. There are four neural modes:
+generator. The neural modes are:
 
 - `--summary-stats enca` uses the original Conv1D ENCA encoder. Each simulated
   or observed time series is reshaped from `(Tobs,)` to `(Tobs, 1)` and passed
@@ -396,13 +393,16 @@ generator. There are four neural modes:
   from the training metadata, applies `log1p(abs(rFFT(Hann(x))))`, keeps the
   first `num_fft_components`, and presents the result to the Conv1D encoder
   with shape `(batch, components, 1)`.
+- `--summary-stats enca_fft_cnn_5+1` uses the five outputs of an **original-model
+  z=5** Fourier-CNN encoder and appends one FFT magnitude near Jupiter's period.
+  This mode requires `--model jupiter`; see the hybrid example below.
 - `--summary-stats fno` uses a Fourier Neural Operator encoder. The loader reads
   `len_timeseries`, `ndims_latent`, `representation_mode`, and FNO architecture
   values such as `fno_modes`/`modes`, `fno_width`/`width`, and `fno_depth` from
   the training run's `hyper_parameters.json`.
 
-In all neural modes, the encoder output becomes the SABC summary-statistics
-vector.
+The encoder output becomes the SABC summary-statistics vector, with the extra
+FFT magnitude appended only in the `enca_fft_cnn_5+1` mode.
 
 Use ENCA summaries by setting:
 
@@ -442,6 +442,61 @@ Use FNO summaries by setting:
 --summary-stats fno
 --train-run-dir /path/to/sdde_FNO_runs/<run_name>
 ```
+
+#### Original CNN5 plus a Jupiter-period FFT magnitude
+
+This opt-in test needs no retraining. In `runjob.sh`, set:
+
+```bash
+MODEL="jupiter"
+SUMMARY_STATS="enca_fft_cnn_5+1"
+TRAIN_RUN_DIR="/cfs/earth/scratch/ulzg/enca-inca/sdde_ENCAFourierCNN_runs/20260909_encafouriercnn_z5"
+ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
+FOURIER_RANGE=""
+MLP_USE_FIRST_STATS=""
+```
+
+Keep choosing the output suffix manually, for example:
+
+```bash
+RUN_NAME="${DATASET}_${algorithm_label}${model_label}_enca5plus1"
+```
+
+Statistics 1–5 preserve the encoder's preprocessing and output order:
+`tau, T, Nd, sigma, Bmax`. They are encoder coordinates, with no reordering or
+conversion to physical parameter units. Statistic 6 is
+`abs(rfft(x * numpy.hanning(N)))[k] / N`, where
+`k = floor(N / 11.86 + 0.5)` for annually sampled observations and simulations.
+For `N=271`, this is **NumPy bin 23**, period **11.7826 years**, or **Julia index
+24** in the existing one-based `--fourier-range` convention. The FFT magnitude
+normalization matches the existing FFT backend. No log transform, squared
+power, peak search, or detrending is applied to this added statistic.
+
+The inference still samples all six Jupiter parameters under the usual prior,
+including the unchanged random-phase treatment. Its six absolute summary
+differences use the existing SABC distance transformation and annealing. There
+are no special weights for statistic 6. Power at this frequency can also come
+from the solar cycle; it is not an isolated measurement of Jupiter modulation.
+
+The original-model z=5 checkpoint must use canonical NoiseGrid and Hann
+preprocessing. Other neural modes retain their model-matching requirements.
+The exact checkpoint, its hash, and FFT settings are logged and retained in the
+normal result pickle; this mode adds no separate output file. Resuming rejects
+a changed checkpoint, changed FFT settings, or a different summary mode.
+
+Filter the resulting run using the same hybrid mode and training directory:
+
+```bash
+python3 importance_sampling_filter.py \
+  --run-name obsSN_single_jupiter_enca5plus1 \
+  --summary-stats 'enca_fft_cnn_5+1' \
+  --train-run-dir /path/to/sdde_ENCAFourierCNN_runs/20260909_encafouriercnn_z5 \
+  --n-workers 4
+```
+
+The filter reloads the exact saved checkpoint even if a newer `model_best_ckpt`
+exists. The training directory may be relocated between the cluster and Mac;
+checkpoint contents and preprocessing must match the saved inference.
 
 The legacy option name `--enca-run-dir` is still accepted as an alias for backward compatibility.
 
@@ -502,7 +557,7 @@ The neural backend checks that the selected dataset length matches the encoder's
 `len_timeseries = 271` is used with a dataset of a different length.
 
 TensorFlow is required for `--summary-stats enca`, `--summary-stats mlp`,
-`--summary-stats enca_fft_cnn`, and `--summary-stats fno`. Use
+`--summary-stats enca_fft_cnn`, `--summary-stats enca_fft_cnn_5+1`, and `--summary-stats fno`. Use
 `sddepy_enca_env` for ENCA/MLP/Fourier-CNN ENCA and
 `sddepy_fno_env` for FNO if GPU acceleration is desired. Standard FFT runs do
 not import TensorFlow.
@@ -526,7 +581,7 @@ MODEL="original"               # "original" or "jupiter"
 On a different cluster or filesystem, only the path values and environment
 activation commands should need to change; the Python options are the same.
 
-When `SUMMARY_STATS` is `enca`, `mlp`, `enca_fft_cnn`, or `fno`, `FOURIER_RANGE` is ignored and
+For neural modes, `FOURIER_RANGE` should be empty and
 not passed to the Python driver.
 
 For a paired comparison, pass the same three seed values, worker count, and all
@@ -641,18 +696,16 @@ Supported command-line arguments:
   synthetic runs.
 - `--summary-stats`
   Summary-statistics backend used for reconstructed distances. Choices: `fft`,
-  `enca`, `mlp`, `enca_fft_cnn`, `fno`, `spectral_peaks`. This should match the backend used by the original
+  `enca`, `mlp`, `enca_fft_cnn`, `enca_fft_cnn_5+1`, `fno`, `spectral_peaks`. This should match the backend used by the original
   inference run. Default: `fft`.
 - `--fourier-range`
   Optional 1-based Fourier indices for `--summary-stats fft`, for example
   `1:6:60` or `[1,2,5,9]`.
 - `--train-run-dir`
-  Training-run directory required when `--summary-stats enca` or
-  `--summary-stats mlp`, `--summary-stats enca_fft_cnn`, or
-  `--summary-stats fno`.
+  Training-run directory required for every neural mode, including
+  `enca_fft_cnn_5+1`.
 - `--enca-checkpoint-basename`
-  Checkpoint family to load when `--summary-stats enca`, `--summary-stats mlp`,
-  `--summary-stats enca_fft_cnn`, or `--summary-stats fno`. Default:
+  Checkpoint family to load for a neural mode. Default:
   `model_best_ckpt`.
 - `--run-name`
   Optional explicit run name. This can be passed multiple times; if used, the

@@ -31,6 +31,12 @@ from enca_summary_stats import (
     build_mlp_summary_stats,
 )
 from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
+from hybrid_summary_stats import (
+    HYBRID_MODE,
+    HybridSummaryStats,
+    rebuild_hybrid_summary_stats,
+    validate_hybrid_years,
+)
 from spectral_peak_stats import SpectralPeakStats
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
@@ -50,7 +56,7 @@ DEFAULT_SYNTHETIC_DATA_FILE = "sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 DEFAULT_DATASETS = ("obsSN", "C14")
 VALID_ALGORITHMS = ("single", "multi")
-VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks", HYBRID_MODE)
 
 
 class Prior:
@@ -177,9 +183,9 @@ def _parse_args() -> argparse.Namespace:
         help="Show histogram overlays interactively for each processed run.",
     )
     args = parser.parse_args()
-    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno") and args.train_run_dir is None:
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno", HYBRID_MODE) and args.train_run_dir is None:
         parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
-    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks") and args.fourier_range is not None:
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks", HYBRID_MODE) and args.fourier_range is not None:
         parser.error("--fourier-range can only be used with --summary-stats fft")
     return args
 
@@ -357,6 +363,20 @@ def _saved_spectral_stats(result, summary_stats: str) -> SpectralPeakStats | Non
     return None
 
 
+def _saved_hybrid_stats(result, summary_stats: str) -> HybridSummaryStats | None:
+    f_dist = getattr(getattr(result, "config", None), "f_dist", None)
+    adapter = getattr(getattr(f_dist, "stats_fn", None), "__self__", None)
+    if isinstance(adapter, HybridSummaryStats):
+        if summary_stats != HYBRID_MODE:
+            raise ValueError(f"This saved run uses {HYBRID_MODE}; use --summary-stats {HYBRID_MODE}.")
+        if getattr(f_dist, "distance", None) != "abs" or np.shape(f_dist.ss_obs) != (6,):
+            raise ValueError("Saved hybrid distance must have six absolute statistic differences.")
+        return adapter
+    if summary_stats == HYBRID_MODE:
+        raise ValueError("This saved run does not contain enca_fft_cnn_5+1 summary settings.")
+    return None
+
+
 def _build_reconstruction_f_dist(
     dataset: str,
     model: str,
@@ -369,6 +389,8 @@ def _build_reconstruction_f_dist(
     enca_checkpoint_basename: str,
     fft_window: str = "auto",
     spectral_stats: SpectralPeakStats | None = None,
+    hybrid_stats: HybridSummaryStats | None = None,
+    hybrid_ss_obs: np.ndarray | None = None,
 ):
     if summary_stats == "spectral_peaks":
         if dataset != "obsSN" or fourier_range is not None:
@@ -379,7 +401,7 @@ def _build_reconstruction_f_dist(
         # pickle, not current defaults or a fresh reading of the observations.
         t_obs = spectral_stats.config.n_samples
     else:
-        _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
+        obs_years, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
     simulator = build_simulator(
         Twarmup=200,
         Tobs=t_obs,
@@ -429,6 +451,22 @@ def _build_reconstruction_f_dist(
         )
         stats_fn = enca_fft_cnn_stats.batch
         ss_obs = enca_fft_cnn_stats.observed(obs_data)
+    elif summary_stats == HYBRID_MODE:
+        if hybrid_stats is None or hybrid_ss_obs is None:
+            raise ValueError("Hybrid reconstruction requires the adapter and observations from the saved result.")
+        if fourier_range is not None or fft_window not in ("auto", "hann"):
+            raise ValueError("Hybrid FFT settings are fixed; use Hann and no --fourier-range.")
+        validate_hybrid_years(obs_years)
+        current = rebuild_hybrid_summary_stats(
+            hybrid_stats, run_dir=train_run_dir,
+            checkpoint_basename=enca_checkpoint_basename,
+            expected_tobs=t_obs, expected_model=model,
+        )
+        ss_obs = current.observed(obs_data)
+        if np.shape(hybrid_ss_obs) != (6,) or not np.allclose(ss_obs, hybrid_ss_obs, rtol=1e-6, atol=1e-7):
+            raise ValueError("Observed hybrid statistics differ from the saved run.")
+        stats_fn = current.batch
+        ss_obs = np.asarray(hybrid_ss_obs, dtype=float)
     elif summary_stats == "fno":
         fno_stats = build_fno_summary_stats(
             run_dir=train_run_dir,
@@ -474,6 +512,8 @@ def _reconstruct_rho(
     n_workers: int,
     seed: int,
     spectral_stats: SpectralPeakStats | None = None,
+    hybrid_stats: HybridSummaryStats | None = None,
+    hybrid_ss_obs: np.ndarray | None = None,
 ) -> np.ndarray:
     if n_repeats < 1:
         raise ValueError("--n-repeats must be >= 1.")
@@ -490,6 +530,8 @@ def _reconstruct_rho(
         enca_checkpoint_basename=enca_checkpoint_basename,
         fft_window=fft_window,
         spectral_stats=spectral_stats,
+        hybrid_stats=hybrid_stats,
+        hybrid_ss_obs=hybrid_ss_obs,
     )
     n_stats = int(f_dist.ss_obs.size)
     rho_sum = np.zeros((population.shape[0], n_stats), dtype=float)
@@ -667,7 +709,10 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
 
     saved_result = _load_saved_result(run_name)
     spectral_stats = _saved_spectral_stats(saved_result, args.summary_stats)
+    hybrid_stats = _saved_hybrid_stats(saved_result, args.summary_stats)
     sabc_rho = _recover_sabc_rho(run_name, n_particles=n_particles, saved_result=saved_result)
+    if hybrid_stats is not None and sabc_rho.shape != (n_particles, 6):
+        raise ValueError("Saved hybrid rho must contain six statistic differences per particle.")
     if spectral_stats is not None:
         if sabc_rho.shape != (n_particles, 1):
             raise ValueError("Saved spectral_peaks rho must contain one scalar loss per particle.")
@@ -696,6 +741,8 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
         n_workers=args.n_workers,
         seed=args.seed,
         spectral_stats=spectral_stats,
+        hybrid_stats=hybrid_stats,
+        hybrid_ss_obs=saved_result.config.f_dist.ss_obs if hybrid_stats is not None else None,
     )
 
     reconstructed_norms = _norms(reconstructed_rho)

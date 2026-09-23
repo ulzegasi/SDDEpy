@@ -23,7 +23,9 @@ DATASET="obsSN"          # "obsSN", "C14", or "synthetic"
 MODEL="original"         # "original" or "jupiter"
 SYNTHETIC_DATA_FILE="sn_t3_T3_N7_s003_B8_tobs271_seed1822.csv"
 ALGORITHM="single_eps"   # "single_eps" or "multi_eps"
-SUMMARY_STATS="enca_fft_cnn"      # "fft", "spectral_peaks", "enca", "mlp", or "enca_fft_cnn"
+SUMMARY_STATS="enca_fft_cnn"      # "fft", "spectral_peaks", "enca", "mlp", "enca_fft_cnn", or "enca_fft_cnn_5+1"
+# Hybrid test: MODEL="jupiter", SUMMARY_STATS="enca_fft_cnn_5+1" and an original-model z=5 CNN training.
+# It appends Hann FFT magnitude at the bin nearest 11.86y (NumPy 23 / Julia 24 for 271 samples).
 # For the peak-loss test: MODEL="jupiter", SUMMARY_STATS="spectral_peaks".
 # spectral_peaks requires DATASET="obsSN" and ALGORITHM="single_eps"; no training needed.
 N_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
@@ -31,7 +33,7 @@ SIMULATOR_SEED="123"     # forward-model simulations; set "" for fresh randomnes
 ALGORITHM_SEED="18"      # algorithm randomness; set "" for fresh randomness
 PROPOSAL_SEED="22"       # Differential Evolution proposals; set "" for fresh randomness
 FOURIER_RANGE=""   # default in code is 1:6:120; set empty string to use default
-TRAIN_RUN_DIR=""         # required when SUMMARY_STATS is "enca", "mlp", or "enca_fft_cnn"
+TRAIN_RUN_DIR=""         # required for all neural modes, including "enca_fft_cnn_5+1"
 ENCA_CHECKPOINT_BASENAME="model_best_ckpt"
 MLP_USE_FIRST_STATS=""   # MLP only: set "5" for first five outputs; "" uses all
 
@@ -49,6 +51,10 @@ RUN_NAME="${DATASET}_${algorithm_label}${model_label}_enca_fft_cnn"
 
 if [[ -n "$MLP_USE_FIRST_STATS" && "$SUMMARY_STATS" != "mlp" ]]; then
   echo "ERROR: MLP_USE_FIRST_STATS requires SUMMARY_STATS=mlp" >&2
+  exit 1
+fi
+if [[ "$SUMMARY_STATS" == "enca_fft_cnn_5+1" && ( "$MODEL" != "jupiter" || -n "$FOURIER_RANGE" ) ]]; then
+  echo "ERROR: enca_fft_cnn_5+1 requires MODEL=jupiter and empty FOURIER_RANGE" >&2
   exit 1
 fi
 if [[ "$SUMMARY_STATS" == "spectral_peaks" && ( "$DATASET" != "obsSN" || "$ALGORITHM" != "single_eps" ) ]]; then
@@ -106,7 +112,7 @@ if [[ "$SUMMARY_STATS" == "fft" ]]; then
   echo "FOURIER_RANGE=${FOURIER_RANGE:-default 1:6:120}"
 elif [[ "$SUMMARY_STATS" == "spectral_peaks" ]]; then
   echo "SPECTRAL_PEAK_SCORE=spectral_peaks_v1; weights=5,5,1,1,1,1; Gleissberg grid=32x"
-elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
+elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" || "$SUMMARY_STATS" == "enca_fft_cnn_5+1" ]]; then
   if [[ -z "$TRAIN_RUN_DIR" ]]; then
     echo "ERROR: TRAIN_RUN_DIR must be set when SUMMARY_STATS=$SUMMARY_STATS" >&2
     exit 1
@@ -114,7 +120,7 @@ elif [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STA
   echo "TRAIN_RUN_DIR=$TRAIN_RUN_DIR"
   echo "ENCA_CHECKPOINT_BASENAME=$ENCA_CHECKPOINT_BASENAME"
 else
-  echo "ERROR: SUMMARY_STATS must be fft, spectral_peaks, enca, mlp, or enca_fft_cnn, got '$SUMMARY_STATS'" >&2
+  echo "ERROR: SUMMARY_STATS must be fft, spectral_peaks, enca, mlp, enca_fft_cnn, or enca_fft_cnn_5+1, got '$SUMMARY_STATS'" >&2
   exit 1
 fi
 
@@ -148,7 +154,7 @@ if [[ "$SUMMARY_STATS" == "fft" && -n "$FOURIER_RANGE" ]]; then
   cmd+=(--fourier-range "$FOURIER_RANGE")
 fi
 
-if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" ]]; then
+if [[ "$SUMMARY_STATS" == "enca" || "$SUMMARY_STATS" == "mlp" || "$SUMMARY_STATS" == "enca_fft_cnn" || "$SUMMARY_STATS" == "enca_fft_cnn_5+1" ]]; then
   cmd+=(--train-run-dir "$TRAIN_RUN_DIR")
   cmd+=(--enca-checkpoint-basename "$ENCA_CHECKPOINT_BASENAME")
 fi

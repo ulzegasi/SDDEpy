@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 from pathlib import Path
 import sys
 import time
@@ -23,6 +24,12 @@ from enca_summary_stats import (
     build_mlp_summary_stats,
 )
 from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
+from hybrid_summary_stats import (
+    HYBRID_MODE,
+    build_hybrid_summary_stats,
+    validate_hybrid_resume,
+    validate_hybrid_years,
+)
 from spectral_peak_stats import (
     build_spectral_peak_stats,
     save_spectral_peak_metadata,
@@ -61,7 +68,7 @@ LOCAL_OUT_DIR = PROJECT_DIR / "output"
 SYNTHETIC_DATA_DIR = LOCAL_DATA_DIR / "synthetic_data"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 VALID_ALGORITHMS = ("single_eps", "multi_eps")
-VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks", HYBRID_MODE)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -123,6 +130,7 @@ def _parse_args() -> argparse.Namespace:
             "'enca' uses the original time-series ENCA encoder; "
             "'mlp' uses a Fourier/MLP ENCA encoder; "
             "'enca_fft_cnn' uses the Fourier-CNN ENCA encoder; "
+            "'enca_fft_cnn_5+1' combines an original-model z=5 CNN with a Jupiter-period FFT magnitude; "
             "'fno' uses a Fourier Neural Operator encoder."
         ),
     )
@@ -155,6 +163,8 @@ def _parse_args() -> argparse.Namespace:
         help="Use only the first N MLP encoder outputs; omit to use all outputs.",
     )
     args = parser.parse_args()
+    if args.summary_stats == HYBRID_MODE and args.model != "jupiter":
+        parser.error("--summary-stats enca_fft_cnn_5+1 requires --model jupiter")
     if args.summary_stats == "spectral_peaks":
         if args.dataset != "obsSN":
             parser.error("--summary-stats spectral_peaks currently requires --dataset obsSN")
@@ -172,7 +182,7 @@ def _parse_args() -> argparse.Namespace:
             parser.error("Missing data file, specify --synthetic-data-file")
         if Path(args.synthetic_data_file).name != args.synthetic_data_file:
             parser.error("--synthetic-data-file must be a file name, not a path")
-    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno"):
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno", HYBRID_MODE):
         if args.train_run_dir is None:
             parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
         if args.fourier_range is not None:
@@ -468,6 +478,21 @@ def main() -> None:
             f"{args.train_run_dir} ({args.enca_checkpoint_basename}), "
             f"window={enca_fft_cnn_stats.config.fft_window}"
         )
+    elif args.summary_stats == HYBRID_MODE:
+        validate_hybrid_years(SNyrs)
+        hybrid_stats = build_hybrid_summary_stats(
+            run_dir=args.train_run_dir,
+            checkpoint_basename=args.enca_checkpoint_basename,
+            expected_tobs=Tobs_without_warmup,
+            expected_model=args.model,
+        )
+        fourier_range = None
+        stats_fn = hybrid_stats.batch
+        ss_obs = hybrid_stats.observed(SNdata)
+        summary_stats_label = HYBRID_MODE
+        summary_stats_detail = json.dumps(hybrid_stats.metadata(), sort_keys=True)
+        print(f"Hybrid summary statistics: {summary_stats_detail}", flush=True)
+        print(f"Observed hybrid statistics: {ss_obs.tolist()}", flush=True)
     elif args.summary_stats == "fno":
         fno_stats = build_fno_summary_stats(
             run_dir=args.train_run_dir,
@@ -554,6 +579,14 @@ def main() -> None:
         out_prev = load_sabc_result(prev_path)
         previous_stats_fn = getattr(out_prev.config.f_dist, "stats_fn", None)
         validate_spectral_peak_resume(previous_stats_fn, stats_fn)
+        validate_hybrid_resume(previous_stats_fn, stats_fn)
+        if args.summary_stats == HYBRID_MODE:
+            previous_obs = np.asarray(out_prev.config.f_dist.ss_obs)
+            if previous_obs.shape != ss_obs.shape or not np.allclose(previous_obs, ss_obs, rtol=1e-6, atol=1e-7):
+                raise ValueError("Cannot change observed hybrid statistics when resuming a run.")
+            # Keep the saved distance RNG/state, but allow the same checkpoint
+            # to be restored from its current local path.
+            out_prev.config.f_dist.stats_fn = stats_fn
         previous_stats_config = getattr(
             getattr(previous_stats_fn, "__self__", None), "config", None
         )
