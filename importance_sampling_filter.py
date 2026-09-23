@@ -31,6 +31,7 @@ from enca_summary_stats import (
     build_mlp_summary_stats,
 )
 from process_fdist import make_process_f_dist, make_process_sim_then_stats_f_dist
+from spectral_peak_stats import SpectralPeakStats
 from sdde_model import init_julia
 from solar_dynamo_sabc_setup import (
     build_stats_fn,
@@ -49,7 +50,7 @@ DEFAULT_SYNTHETIC_DATA_FILE = "sn_t6_T7_N12_s002_B8_tobs271_seed1822.csv"
 VALID_DATASETS = ("obsSN", "C14", "synthetic")
 DEFAULT_DATASETS = ("obsSN", "C14")
 VALID_ALGORITHMS = ("single", "multi")
-VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno")
+VALID_SUMMARY_STATS = ("fft", "enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks")
 
 
 class Prior:
@@ -178,7 +179,7 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno") and args.train_run_dir is None:
         parser.error(f"--summary-stats {args.summary_stats} requires --train-run-dir")
-    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno") and args.fourier_range is not None:
+    if args.summary_stats in ("enca", "mlp", "enca_fft_cnn", "fno", "spectral_peaks") and args.fourier_range is not None:
         parser.error("--fourier-range can only be used with --summary-stats fft")
     return args
 
@@ -295,33 +296,65 @@ def _model_from_population(population: np.ndarray) -> str:
     )
 
 
-def _recover_sabc_rho(run_name: str, n_particles: int) -> np.ndarray:
+def _load_saved_result(run_name: str):
+    """Load once so reconstruction and saved-rho filtering share the same run."""
     load_sabc_result = _import_sabc_io()
     pkl_path = OUTPUT_DIR / f"SABCresult_{run_name}.pkl"
-    if pkl_path.exists():
-        try:
-            main_module = sys.modules.get("__main__")
-            if main_module is not None and not hasattr(main_module, "Prior"):
-                setattr(main_module, "Prior", Prior)
-            result = load_sabc_result(pkl_path)
-            rho = np.asarray(result.rho, dtype=float)
-            rho = np.atleast_2d(rho)
-            if rho.shape[0] != n_particles and rho.shape[1] == n_particles:
-                rho = rho.T
-            if rho.shape[0] != n_particles:
-                raise ValueError(
-                    f"Saved final rho in {pkl_path} has shape {rho.shape}, "
-                    f"expected {n_particles} particles."
-                )
-            return rho
-        except Exception as exc:
-            raise RuntimeError(
-                f"Could not recover final SABC rho from {pkl_path}. "
-                f"rho_history is not a valid fallback here because it stores "
-                f"population means, not the final particle-wise rho matrix. "
-                f"Original error: {exc}"
+    if not pkl_path.exists():
+        raise FileNotFoundError(f"Final SABC result not found: {pkl_path}")
+    try:
+        main_module = sys.modules.get("__main__")
+        if main_module is not None and not hasattr(main_module, "Prior"):
+            setattr(main_module, "Prior", Prior)
+        return load_sabc_result(pkl_path)
+    except Exception as exc:
+        raise RuntimeError(f"Could not load final SABC result from {pkl_path}: {exc}") from exc
+
+
+def _recover_sabc_rho(run_name: str, n_particles: int, *, saved_result=None) -> np.ndarray:
+    result = _load_saved_result(run_name) if saved_result is None else saved_result
+    pkl_path = OUTPUT_DIR / f"SABCresult_{run_name}.pkl"
+    try:
+        rho = np.atleast_2d(np.asarray(result.rho, dtype=float))
+        if rho.shape[0] != n_particles and rho.shape[1] == n_particles:
+            rho = rho.T
+        if rho.shape[0] != n_particles:
+            raise ValueError(
+                f"Saved final rho in {pkl_path} has shape {rho.shape}, "
+                f"expected {n_particles} particles."
             )
-    raise FileNotFoundError(f"Final SABC result not found: {pkl_path}")
+        return rho
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not recover final SABC rho from {pkl_path}. "
+            f"rho_history is not a valid fallback here because it stores "
+            f"population means, not the final particle-wise rho matrix. "
+            f"Original error: {exc}"
+        ) from exc
+
+
+def _saved_spectral_stats(result, summary_stats: str) -> SpectralPeakStats | None:
+    """Recover the frozen peak loss and reject mixing it with another metric."""
+    f_dist = getattr(getattr(result, "config", None), "f_dist", None)
+    adapter = getattr(getattr(f_dist, "stats_fn", None), "__self__", None)
+    if isinstance(adapter, SpectralPeakStats):
+        if summary_stats != "spectral_peaks":
+            raise ValueError(
+                "This saved run uses spectral_peaks. Reconstruct it with "
+                "--summary-stats spectral_peaks, not a different distance."
+            )
+        if (
+            getattr(f_dist, "distance", None) != "abs"
+            or not np.array_equal(getattr(f_dist, "ss_obs", None), adapter.ss_obs)
+        ):
+            raise ValueError("Saved spectral_peaks distance must be one absolute scalar loss against zero.")
+        return adapter
+    if summary_stats == "spectral_peaks":
+        raise ValueError(
+            "--summary-stats spectral_peaks requires a result pickle containing "
+            "the original spectral-peaks scoring settings. This saved run does not contain them."
+        )
+    return None
 
 
 def _build_reconstruction_f_dist(
@@ -335,8 +368,18 @@ def _build_reconstruction_f_dist(
     train_run_dir: str | None,
     enca_checkpoint_basename: str,
     fft_window: str = "auto",
+    spectral_stats: SpectralPeakStats | None = None,
 ):
-    _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
+    if summary_stats == "spectral_peaks":
+        if dataset != "obsSN" or fourier_range is not None:
+            raise ValueError("spectral_peaks requires obsSN and no --fourier-range.")
+        if spectral_stats is None:
+            raise ValueError("spectral_peaks reconstruction requires the scoring adapter from the saved result.")
+        # Targets, visibility gates, weights, and length come from this run's
+        # pickle, not current defaults or a fresh reading of the observations.
+        t_obs = spectral_stats.config.n_samples
+    else:
+        _, obs_data, t_obs = load_dataset(dataset, DATA_DIR, synthetic_data_path=synthetic_data_path)
     simulator = build_simulator(
         Twarmup=200,
         Tobs=t_obs,
@@ -346,7 +389,10 @@ def _build_reconstruction_f_dist(
         threaded=n_workers <= 1,
     )
 
-    if summary_stats == "fft":
+    if summary_stats == "spectral_peaks":
+        stats_fn = spectral_stats.batch
+        ss_obs = spectral_stats.ss_obs
+    elif summary_stats == "fft":
         stats_fn = build_stats_fn(fourier_range=fourier_range)
         ss_obs = observed_summary_statistics(obs_data, fourier_range=fourier_range)
     elif summary_stats == "enca":
@@ -396,7 +442,7 @@ def _build_reconstruction_f_dist(
 
     make_process_distance = (
         make_process_sim_then_stats_f_dist
-        if summary_stats != "fft"
+        if summary_stats not in ("fft", "spectral_peaks")
         else make_process_f_dist
     )
     return make_process_distance(
@@ -427,6 +473,7 @@ def _reconstruct_rho(
     n_repeats: int,
     n_workers: int,
     seed: int,
+    spectral_stats: SpectralPeakStats | None = None,
 ) -> np.ndarray:
     if n_repeats < 1:
         raise ValueError("--n-repeats must be >= 1.")
@@ -442,6 +489,7 @@ def _reconstruct_rho(
         train_run_dir=train_run_dir,
         enca_checkpoint_basename=enca_checkpoint_basename,
         fft_window=fft_window,
+        spectral_stats=spectral_stats,
     )
     n_stats = int(f_dist.ss_obs.size)
     rho_sum = np.zeros((population.shape[0], n_stats), dtype=float)
@@ -617,6 +665,18 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
     n_particles = population.shape[0]
     model = _model_from_population(population)
 
+    saved_result = _load_saved_result(run_name)
+    spectral_stats = _saved_spectral_stats(saved_result, args.summary_stats)
+    sabc_rho = _recover_sabc_rho(run_name, n_particles=n_particles, saved_result=saved_result)
+    if spectral_stats is not None:
+        if sabc_rho.shape != (n_particles, 1):
+            raise ValueError("Saved spectral_peaks rho must contain one scalar loss per particle.")
+        print(
+            f"[{run_name}] using saved {spectral_stats.config.version} scoring settings "
+            f"(weights={spectral_stats.config.weights})",
+            flush=True,
+        )
+
     print(
         f"[{run_name}] reconstructing with model={model}, summary_stats={args.summary_stats}",
         flush=True,
@@ -635,8 +695,8 @@ def _process_one_run(args: argparse.Namespace, run_name: str) -> None:
         n_repeats=args.n_repeats,
         n_workers=args.n_workers,
         seed=args.seed,
+        spectral_stats=spectral_stats,
     )
-    sabc_rho = _recover_sabc_rho(run_name, n_particles=n_particles)
 
     reconstructed_norms = _norms(reconstructed_rho)
     sabc_norms = _norms(sabc_rho)

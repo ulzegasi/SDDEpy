@@ -598,6 +598,28 @@ python3 importance_sampling_filter.py --dataset C14 --algorithm single --tag 77p
 python3 importance_sampling_filter.py --dataset C14 --algorithm multi --tag 77py
 ```
 
+For a peak-loss inference, select `spectral_peaks` (with an underscore):
+
+```bash
+python3 importance_sampling_filter.py \
+  --run-name obsSN_single_jupiter_spectralpeaks \
+  --summary-stats spectral_peaks \
+  --n-repeats 50 --keep-mass 0.70 --n-workers 4 --seed 123
+```
+
+This reads the frozen spectral-peak adapter from `SABCresult_<run_name>.pkl`,
+preserving that run's observed targets, weights, prominence gates, and other
+scoring settings. It needs no training directory or Fourier-index selection.
+The companion scoring JSON is documentation; the filter uses the pickle.
+For each particle, reconstructed distance is the average **combined peak loss**
+over the repeated simulations; saved SABC distance is its original scalar
+`rho`. Their one-dimensional norms are simply those nonnegative losses. The
+existing cutoff selection and the two output filenames remain unchanged.
+
+Using `--summary-stats fft` for a saved peak-loss run is rejected before
+resimulation: it would compute a different, 20-component distance. Conversely,
+`spectral_peaks` requires a pickle containing the saved peak-scoring adapter.
+
 To display the overlaid histogram comparison interactively, add:
 
 ```bash
@@ -619,7 +641,7 @@ Supported command-line arguments:
   synthetic runs.
 - `--summary-stats`
   Summary-statistics backend used for reconstructed distances. Choices: `fft`,
-  `enca`, `mlp`, `enca_fft_cnn`, `fno`. This should match the backend used by the original
+  `enca`, `mlp`, `enca_fft_cnn`, `fno`, `spectral_peaks`. This should match the backend used by the original
   inference run. Default: `fft`.
 - `--fourier-range`
   Optional 1-based Fourier indices for `--summary-stats fft`, for example
