@@ -216,26 +216,33 @@ def _build_encoder(
     representation_mode: str,
     num_fft_components: int | None,
 ):
-    if representation_mode == "enca_fft_cnn":
+    if representation_mode in ("enca_fft_cnn", "enca_fft4_cnn"):
         if num_fft_components is None:
             raise ValueError("num_fft_components is required for Fourier-CNN ENCA")
 
+        complex_input = representation_mode == "enca_fft4_cnn"
+
+        def activation():
+            if complex_input:
+                return tf.keras.layers.LeakyReLU(negative_slope=0.1)
+            return "relu"
+
         x_input = tf.keras.layers.Input(
-            shape=[num_fft_components, 1],
-            name="fourier_log_amplitude",
+            shape=[num_fft_components, 2 if complex_input else 1],
+            name="fourier_real_imag" if complex_input else "fourier_log_amplitude",
         )
         x = tf.keras.layers.Conv1D(
-            16, 3, padding="same", activation="relu", name="enc_conv_1"
+            16, 3, padding="same", activation=activation(), name="enc_conv_1"
         )(x_input)
         x = tf.keras.layers.Conv1D(
-            16, 3, padding="same", activation="relu", name="enc_conv_2"
+            16, 3, padding="same", activation=activation(), name="enc_conv_2"
         )(x)
         x = tf.keras.layers.MaxPool1D(pool_size=2, name="enc_maxpool")(x)
         x = tf.keras.layers.Conv1D(
-            32, 3, padding="same", activation="relu", name="enc_conv_3"
+            32, 3, padding="same", activation=activation(), name="enc_conv_3"
         )(x)
         x = tf.keras.layers.Conv1D(
-            32, 3, padding="same", activation="relu", name="enc_conv_4"
+            32, 3, padding="same", activation=activation(), name="enc_conv_4"
         )(x)
         x = tf.keras.layers.Conv1D(
             ndims_latent,
@@ -479,6 +486,21 @@ def _build_fno_encoder(
     return tf.keras.Model(inputs=x_input, outputs=z)
 
 
+def _timeseries_to_rfft_real_imag(
+    samples: np.ndarray, *, num_fft_components: int, fft_window: str
+) -> np.ndarray:
+    """Match Fourier4 training: symmetric Hann, orthonormal rFFT, Re/Im channels."""
+    tf = _import_tensorflow()
+    samples = tf.convert_to_tensor(samples, dtype=tf.float32)
+    n_time = tf.shape(samples)[1]
+    if _normalize_fft_window(fft_window) == "hann":
+        samples = samples * tf.signal.hann_window(n_time, periodic=False)[None, :]
+    spectrum = tf.signal.rfft(samples)
+    spectrum /= tf.cast(tf.sqrt(tf.cast(n_time, tf.float32)), spectrum.dtype)
+    spectrum = spectrum[:, :num_fft_components]
+    return tf.stack([tf.math.real(spectrum), tf.math.imag(spectrum)], axis=-1).numpy()
+
+
 def _prepare_samples(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.ndarray:
     samples = np.asarray(data, dtype=np.float32)
     if samples.ndim == 1:
@@ -500,10 +522,15 @@ def _prepare_samples(config: EncaSummaryStatsConfig, data: np.ndarray) -> np.nda
             fft_log_eps=config.fft_log_eps,
         )
 
-    if config.representation_mode == "enca_fft_cnn":
+    if config.representation_mode in ("enca_fft_cnn", "enca_fft4_cnn"):
         if config.num_fft_components is None:
             raise ValueError("num_fft_components is required for Fourier-CNN ENCA")
-        return _timeseries_to_rfft_log1p_amplitudes(
+        transform = (
+            _timeseries_to_rfft_real_imag
+            if config.representation_mode == "enca_fft4_cnn"
+            else _timeseries_to_rfft_log1p_amplitudes
+        )
+        return transform(
             samples,
             num_fft_components=config.num_fft_components,
             fft_window=config.fft_window,
@@ -752,6 +779,15 @@ def build_enca_fft_cnn_summary_stats(
         raise NotADirectoryError(f"Fourier-CNN ENCA run path is not a directory: {run_dir}")
 
     hyper_parameters = _load_hyper_parameters(run_dir)
+    representation = hyper_parameters.get("representation_mode", "enca_fft_cnn")
+    # Fourier2 changes the decoder only; its encoder remains the amplitude CNN.
+    if representation == "enca_fft2_cnn":
+        representation = "enca_fft_cnn"
+    if representation not in ("enca_fft_cnn", "enca_fft4_cnn"):
+        raise ValueError(f"Unsupported Fourier-CNN representation_mode: {representation!r}")
+    if representation == "enca_fft4_cnn":
+        if hyper_parameters.get("encoder_fft_representation") != "rfft_real_imag_ortho":
+            raise ValueError("Fourier4 requires encoder_fft_representation='rfft_real_imag_ortho'")
     len_timeseries = int(hyper_parameters["len_timeseries"])
     ndims_latent = int(hyper_parameters["ndims_latent"])
     num_fft_components = int(hyper_parameters["num_fft_components"])
@@ -794,7 +830,7 @@ def build_enca_fft_cnn_summary_stats(
         checkpoint_basename=checkpoint_basename,
         len_timeseries=len_timeseries,
         ndims_latent=ndims_latent,
-        representation_mode="enca_fft_cnn",
+        representation_mode=representation,
         num_fft_components=num_fft_components,
         fft_window=resolved_fft_window,
         model=model,

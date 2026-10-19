@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,12 +12,31 @@ from enca_summary_stats import (
     CANONICAL_NOISEGRID_BACKEND,
     _timeseries_to_fft_log_amplitudes,
     _timeseries_to_rfft_log1p_amplitudes,
+    _timeseries_to_rfft_real_imag,
     build_enca_fft_cnn_summary_stats,
     build_mlp_summary_stats,
 )
 
 
 class FourierPreprocessingTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("tensorflow"), "TensorFlow required")
+    def test_fourier4_preserves_signed_phase_and_orthonormal_scale(self):
+        samples = np.zeros((2, 8), dtype=np.float32)
+        samples[:, 2] = [3, -3]
+        for window in ("none", "hann"):
+            with self.subTest(window=window):
+                actual = _timeseries_to_rfft_real_imag(
+                    samples, num_fft_components=4, fft_window=window
+                )
+                scale = 3 / np.sqrt(8)
+                if window == "hann":
+                    scale *= (1 - np.cos(4 * np.pi / 7)) / 2
+                # An impulse at t=2 has phase -pi*k/2, including negative
+                # real and imaginary coefficients that magnitudes would lose.
+                expected = scale * np.array([[1, 0], [0, -1], [-1, 0], [0, 1]])
+                np.testing.assert_allclose(actual[0], expected, rtol=1e-6, atol=1e-6)
+                np.testing.assert_allclose(actual[1], -expected, rtol=1e-6, atol=1e-6)
+
     def test_mlp_transform_uses_a_hann_window(self):
         samples = np.arange(1, 9, dtype=np.float32).reshape(1, -1)
 
@@ -72,6 +92,32 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_fourier_variants_select_their_encoder_representation(self):
+        for training_mode, inference_mode in (
+            ("enca_fft_cnn", "enca_fft_cnn"),
+            ("enca_fft2_cnn", "enca_fft_cnn"),
+            ("enca_fft4_cnn", "enca_fft4_cnn"),
+        ):
+            with self.subTest(training_mode=training_mode):
+                run_dir = self._make_run({
+                    "len_timeseries": 271, "ndims_latent": 5,
+                    "num_fft_components": 100, "window": "Hann",
+                    "representation_mode": training_mode,
+                    "encoder_fft_representation": "rfft_real_imag_ortho",
+                })
+                stats = build_enca_fft_cnn_summary_stats(run_dir=run_dir)
+                self.assertEqual(stats.config.representation_mode, inference_mode)
+
+    def test_fourier4_rejects_incompatible_preprocessing(self):
+        run_dir = self._make_run({
+            "len_timeseries": 271, "ndims_latent": 5,
+            "num_fft_components": 100, "window": "Hann",
+            "representation_mode": "enca_fft4_cnn",
+            "encoder_fft_representation": "log_amplitude",
+        })
+        with self.assertRaisesRegex(ValueError, "rfft_real_imag_ortho"):
+            build_enca_fft_cnn_summary_stats(run_dir=run_dir)
 
     def test_auto_reads_uppercase_training_window_metadata(self):
         run_dir = self._make_run(
