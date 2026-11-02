@@ -783,6 +783,9 @@ def build_enca_fft_cnn_summary_stats(
     # Fourier2 changes the decoder only; its encoder remains the amplitude CNN.
     if representation == "enca_fft2_cnn":
         representation = "enca_fft_cnn"
+    # Fourier6 changes the decoder only; its encoder matches Fourier4.
+    if representation == "enca_fft6_cnn":
+        representation = "enca_fft4_cnn"
     if representation not in ("enca_fft_cnn", "enca_fft4_cnn"):
         raise ValueError(f"Unsupported Fourier-CNN representation_mode: {representation!r}")
     if representation == "enca_fft4_cnn":

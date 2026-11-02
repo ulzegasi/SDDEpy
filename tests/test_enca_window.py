@@ -98,6 +98,7 @@ class FourierCnnWindowConfigurationTests(unittest.TestCase):
             ("enca_fft_cnn", "enca_fft_cnn"),
             ("enca_fft2_cnn", "enca_fft_cnn"),
             ("enca_fft4_cnn", "enca_fft4_cnn"),
+            ("enca_fft6_cnn", "enca_fft4_cnn"),
         ):
             with self.subTest(training_mode=training_mode):
                 run_dir = self._make_run({
